@@ -1,0 +1,27 @@
+# Environment & secrets
+.env
+serviceAccountKey.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+*.egg-info/
+
+# Django
+db.sqlite3
+media/
+
+# ChromaDB
+api/chroma_db/
+
+# Node / React
+node_modules/
+dist/
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
