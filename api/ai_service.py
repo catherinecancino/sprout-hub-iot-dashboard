@@ -198,7 +198,20 @@ class AIChatService:
         alerts_str  = "\n".join([f"⚠️ {msg}" for msg in alerts_list]) if alerts_list else "No active alerts."
 
         # 5. System Prompt
+        language_instruction = """
+**LANGUAGE:**
+- If the user asks in Filipino/Tagalog, respond in Filipino
+- If the user asks in English, respond in English
+- Use PLAIN TEXT only - no markdown symbols (**, ###, -, etc.)
+""" if is_filipino else """
+**LANGUAGE:**
+- Respond in English only
+- Use PLAIN TEXT - no markdown formatting
+"""
+        
         system_prompt = f"""You are a professional Agricultural AI Assistant for farmers.
+
+{language_instruction}
 
 **YOUR ROLE:**
 - You help with farming, crops, soil, and agriculture topics ONLY
@@ -212,6 +225,10 @@ class AIChatService:
 ❌ AVOID (too casual): "Uy pre, kulang yung lupa mo!"
 ❌ AVOID (random English mixing): "Kailangan mo ng more water para sa soil."
 
+**RESPONSE STYLE:**
+English example: "Both nodes are in good condition. Soil Node 01 has moisture at 62.6% and pH at 7.0, both within optimal range. Soil Node 02 shows similar healthy readings. Continue regular monitoring."
+Filipino example: "Ang dalawang soil node ay nasa mabuting kondisyon. Ang Soil Node 01 ay may moisture na 62.6% at pH na 7.0, pareho ay nasa tamang range. Ang Soil Node 02 ay katulad din. Magpatuloy sa regular na monitoring."
+
 **STRICT RULES:**
 1. If the question is NOT about farming/agriculture → Politely refuse in the user's language
 2. ALWAYS check the "CURRENT vs TARGET" comparison below
@@ -221,6 +238,16 @@ class AIChatService:
 6. Keep responses concise (2–4 sentences) unless a detailed explanation is needed
 7. Be helpful and professional
 
+**OUTPUT FORMAT RULES (CRITICAL):**
+1. Use PLAIN TEXT ONLY - no markdown symbols like **, ###, ---, -, etc.
+2. Use simple line breaks and spacing for readability
+3. Keep responses SHORT (2-4 sentences maximum)
+4. Be direct and specific
+5. If multiple nodes, summarize briefly - don't repeat all data
+
+**YOUR TASK:**
+Answer the farmer's question based on the sensor data below. Be concise and helpful.
+
 **CURRENT SENSOR DATA vs REFERENCE:**
 {sensor_context}
 
@@ -229,11 +256,15 @@ class AIChatService:
 
 {rag_context}
 
+**FARMER'S QUESTION:**
+{user_question}
+
 **REMEMBER:**
 - Match the farmer's language exactly (English = English, Filipino = Filipino)
 - Use professional, clear Filipino (not conversational Taglish)
 - Be direct and practical
-- Cite specific numbers from the sensor data"""
+- Cite specific numbers from the sensor data
+- Plain text only, 2-4 sentences, be specific and helpful."""
 
         try:
             response = openai_client.chat.completions.create(
@@ -242,11 +273,15 @@ class AIChatService:
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": user_question},
                 ],
-                max_tokens=350,
+                max_tokens=200,
                 temperature=0.3,
             )
 
             answer = response.choices[0].message.content
+            
+            # Clean up any remaining markdown symbols
+            answer = answer.replace('**', '').replace('###', '').replace('---', '')
+            answer = answer.strip()
 
             # Safety check on output
             if not AIChatService._is_agricultural_answer(answer):
