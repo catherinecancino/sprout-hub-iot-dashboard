@@ -1,6 +1,7 @@
 # Environment & secrets
 .env
 serviceAccountKey.json
+frtontend/.env
 
 # Python
 __pycache__/
