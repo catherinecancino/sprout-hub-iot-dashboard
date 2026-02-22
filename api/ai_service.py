@@ -109,7 +109,7 @@ class AIChatService:
                 "and set your OPENAI_API_KEY in the .env file."
             )
 
-        # 1. Scope Guard
+        # 1. Scope Guard w/ language detection
         if not AIChatService._is_agricultural_question(user_question):
             filipino_indicators = ['ano', 'paano', 'saan', 'kailan', 'bakit',
                                    'kumusta', 'kamusta', 'pano', 'yung', 'mga',
@@ -118,10 +118,8 @@ class AIChatService:
 
             if is_filipino:
                 return (
-                    "Pasensya na po, tumutulong lang ako sa mga tanong tungkol sa "
-                    "agrikultura at pamamahala ng lupa. "
-                    "Magtanong po kayo tungkol sa mga pananim, kondisyon ng lupa, "
-                    "o mga teknik sa pagsasaka. 🌱"
+                    "Pasensya na po, tumutulong lang ako sa mga tanong tungkol sa agrikultura at pamamahala ng lupa. "
+                    "Magtanong po kayo tungkol sa mga pananim, kondisyon ng lupa, o mga teknik sa pagsasaka. 🌱"
                 )
             else:
                 return (
@@ -213,20 +211,16 @@ class AIChatService:
 
 {language_instruction}
 
-**YOUR ROLE:**
-- You help with farming, crops, soil, and agriculture topics ONLY
-- You speak BOTH English and Filipino
-- Match the user's language: if they ask in Filipino, respond in Filipino. If English, respond in English.
-- Use clear, professional language — not overly casual or too formal
-
-**FILIPINO STYLE GUIDE:**
-✓ GOOD: "Ang moisture ng iyong lupa ay mababa. Kailangan ng dagdag na tubig para sa tamang paglaki ng tanim."
-✓ GOOD: "Ang pH level ay 5.2, mas mababa sa ideal na 6.0-6.8 para sa kamatis. Maglapat ng lime upang itaas ang pH."
-❌ AVOID (too casual): "Uy pre, kulang yung lupa mo!"
-❌ AVOID (random English mixing): "Kailangan mo ng more water para sa soil."
+**OUTPUT FORMAT RULES (CRITICAL):**
+1. Use PLAIN TEXT ONLY - no markdown symbols like **, ###, ---, -, etc.
+2. Use simple line breaks and spacing for readability
+3. Keep responses SHORT (2-4 sentences maximum)
+4. Be direct and specific
+5. If multiple nodes, summarize briefly - don't repeat all data
 
 **RESPONSE STYLE:**
 English example: "Both nodes are in good condition. Soil Node 01 has moisture at 62.6% and pH at 7.0, both within optimal range. Soil Node 02 shows similar healthy readings. Continue regular monitoring."
+
 Filipino example: "Ang dalawang soil node ay nasa mabuting kondisyon. Ang Soil Node 01 ay may moisture na 62.6% at pH na 7.0, pareho ay nasa tamang range. Ang Soil Node 02 ay katulad din. Magpatuloy sa regular na monitoring."
 
 **STRICT RULES:**
@@ -237,13 +231,6 @@ Filipino example: "Ang dalawang soil node ay nasa mabuting kondisyon. Ang Soil N
 5. If no document exists for a crop → Suggest uploading one in Settings
 6. Keep responses concise (2–4 sentences) unless a detailed explanation is needed
 7. Be helpful and professional
-
-**OUTPUT FORMAT RULES (CRITICAL):**
-1. Use PLAIN TEXT ONLY - no markdown symbols like **, ###, ---, -, etc.
-2. Use simple line breaks and spacing for readability
-3. Keep responses SHORT (2-4 sentences maximum)
-4. Be direct and specific
-5. If multiple nodes, summarize briefly - don't repeat all data
 
 **YOUR TASK:**
 Answer the farmer's question based on the sensor data below. Be concise and helpful.
