@@ -109,7 +109,7 @@ class AIChatService:
                 "and set your OPENAI_API_KEY in the .env file."
             )
 
-        # 1. Scope Guard w/ language detection
+        # 1. Scope Guard
         if not AIChatService._is_agricultural_question(user_question):
             filipino_indicators = ['ano', 'paano', 'saan', 'kailan', 'bakit',
                                    'kumusta', 'kamusta', 'pano', 'yung', 'mga',
@@ -118,8 +118,10 @@ class AIChatService:
 
             if is_filipino:
                 return (
-                    "Pasensya na po, tumutulong lang ako sa mga tanong tungkol sa agrikultura at pamamahala ng lupa. "
-                    "Magtanong po kayo tungkol sa mga pananim, kondisyon ng lupa, o mga teknik sa pagsasaka. 🌱"
+                    "Pasensya na po, tumutulong lang ako sa mga tanong tungkol sa "
+                    "agrikultura at pamamahala ng lupa. "
+                    "Magtanong po kayo tungkol sa mga pananim, kondisyon ng lupa, "
+                    "o mga teknik sa pagsasaka. 🌱"
                 )
             else:
                 return (
@@ -196,34 +198,22 @@ class AIChatService:
         alerts_str  = "\n".join([f"⚠️ {msg}" for msg in alerts_list]) if alerts_list else "No active alerts."
 
         # 5. System Prompt
-        language_instruction = """
-**LANGUAGE:**
-- If the user asks in Filipino/Tagalog, respond in Filipino
-- If the user asks in English, respond in English
-- Use PLAIN TEXT only - no markdown symbols (**, ###, -, etc.)
-""" if is_filipino else """
-**LANGUAGE:**
-- Respond in English only
-- Use PLAIN TEXT - no markdown formatting
-"""
-        
         system_prompt = f"""You are a professional Agricultural AI Assistant for farmers.
 
-{language_instruction}
+**YOUR ROLE:**
+- You help with farming, crops, soil, and agriculture topics ONLY
+- You speak BOTH English and Filipino
+- Match the user's language: if they ask in Filipino, respond in Filipino. If English, respond in English.
+- Use clear, professional language — not overly casual or too formal
 
-**OUTPUT FORMAT RULES (CRITICAL):**
-1. Use PLAIN TEXT ONLY - no markdown symbols like **, ###, ---, -, etc.
-2. Use simple line breaks and spacing for readability
-3. Keep responses SHORT (2-4 sentences maximum)
-4. Be direct and specific
-5. If multiple nodes, summarize briefly - don't repeat all data
-
-**RESPONSE STYLE:**
-English example: "Both nodes are in good condition. Soil Node 01 has moisture at 62.6% and pH at 7.0, both within optimal range. Soil Node 02 shows similar healthy readings. Continue regular monitoring."
-
-Filipino example: "Ang dalawang soil node ay nasa mabuting kondisyon. Ang Soil Node 01 ay may moisture na 62.6% at pH na 7.0, pareho ay nasa tamang range. Ang Soil Node 02 ay katulad din. Magpatuloy sa regular na monitoring."
+**FILIPINO STYLE GUIDE:**
+✓ GOOD: "Ang moisture ng iyong lupa ay mababa. Kailangan ng dagdag na tubig para sa tamang paglaki ng tanim."
+✓ GOOD: "Ang pH level ay 5.2, mas mababa sa ideal na 6.0-6.8 para sa kamatis. Maglapat ng lime upang itaas ang pH."
+❌ AVOID (too casual): "Uy pre, kulang yung lupa mo!"
+❌ AVOID (random English mixing): "Kailangan mo ng more water para sa soil."
 
 **STRICT RULES:**
+0. ALWAYS use PLAIN TEXT - no markdown symbols (**, ##, ---, bullets). Write naturally.
 1. If the question is NOT about farming/agriculture → Politely refuse in the user's language
 2. ALWAYS check the "CURRENT vs TARGET" comparison below
 3. If you see "⚠ OUT OF RANGE" → Give a specific action to fix it
@@ -231,9 +221,6 @@ Filipino example: "Ang dalawang soil node ay nasa mabuting kondisyon. Ang Soil N
 5. If no document exists for a crop → Suggest uploading one in Settings
 6. Keep responses concise (2–4 sentences) unless a detailed explanation is needed
 7. Be helpful and professional
-
-**YOUR TASK:**
-Answer the farmer's question based on the sensor data below. Be concise and helpful.
 
 **CURRENT SENSOR DATA vs REFERENCE:**
 {sensor_context}
@@ -243,15 +230,11 @@ Answer the farmer's question based on the sensor data below. Be concise and help
 
 {rag_context}
 
-**FARMER'S QUESTION:**
-{user_question}
-
 **REMEMBER:**
 - Match the farmer's language exactly (English = English, Filipino = Filipino)
 - Use professional, clear Filipino (not conversational Taglish)
 - Be direct and practical
-- Cite specific numbers from the sensor data
-- Plain text only, 2-4 sentences, be specific and helpful."""
+- Cite specific numbers from the sensor data"""
 
         try:
             response = openai_client.chat.completions.create(
@@ -266,9 +249,14 @@ Answer the farmer's question based on the sensor data below. Be concise and help
 
             answer = response.choices[0].message.content
             
-            # Clean up any remaining markdown symbols
-            answer = answer.replace('**', '').replace('###', '').replace('---', '')
+            # Clean up markdown formatting
+            answer = answer.replace('**', '')  # Remove bold markers
+            answer = answer.replace('###', '')  # Remove headers
+            answer = answer.replace('##', '')
+            answer = answer.replace('---', '')  # Remove horizontal lines
+            answer = answer.replace('- ', '')   # Remove bullet points
             answer = answer.strip()
+
 
             # Safety check on output
             if not AIChatService._is_agricultural_answer(answer):
@@ -334,13 +322,20 @@ Answer the farmer's question based on the sensor data below. Be concise and help
                     "role": "user",
                     "content": (
                         f"Compare these soil sensor nodes. Which one needs attention first? "
-                        f"Be concise — 2–3 sentences max.\n\n{json.dumps(nodes_data, indent=2)}"
+                        f"Be concise and direct. 1-2 sentences ONLY. Use plain text, no markdown.\n\n"
+                        f"{json.dumps(nodes_data, indent=2)}"
                     ),
                 }],
-                max_tokens=150,
+                max_tokens=100,  # ← REDUCED from 150
                 temperature=0.4,
             )
-            return response.choices[0].message.content
+            
+            answer = response.choices[0].message.content
+                
+                # Clean up markdown
+            answer = answer.replace('**', '').replace('###', '').replace('---', '').strip()
+                
+            return answer
 
         except Exception as e:
             return f"Comparison unavailable: {str(e)}"

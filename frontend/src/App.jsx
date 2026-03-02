@@ -16,6 +16,19 @@ function App() {
   const [newNodeNotification, setNewNodeNotification] = useState(null);
   const [currentView, setCurrentView] = useState('dashboard'); // NEW: 'dashboard' or 'settings'
 
+  // ✨ Helper function to properly format values (handles 0 correctly)
+  const formatValue = (value, unit = '') => {
+    if (value !== undefined && value !== null) {
+      return `${value}${unit}`;
+    }
+    return 'NO DATA';
+  };
+
+  // ✨ Helper to check if value exists
+  const hasValue = (value) => {
+    return value !== undefined && value !== null;
+  };
+
   useEffect(() => {
     // Subscribe to all soil nodes
     const qNodes = query(collection(db, "nodes"));
@@ -26,10 +39,26 @@ function App() {
       
       snapshot.docs.forEach(docSnap => {
         const data = docSnap.data();
+        // ✅ FIX: Read from 'lastReading' to match Firebase schema
+        const lastReading = data.lastReading || data.latest_readings || {};
+        
+        const sensorData = {
+          moisture: lastReading.moisture !== undefined ? lastReading.moisture : data.moisture,
+          ph: lastReading.ph !== undefined ? lastReading.ph : (lastReading.pH !== undefined ? lastReading.pH : (data.ph !== undefined ? data.ph : data.pH)),  // ✅ Handle both 'ph' and 'pH'
+          temperature: lastReading.temperature !== undefined ? lastReading.temperature : data.temperature,
+          nitrogen: lastReading.nitrogen !== undefined ? lastReading.nitrogen : data.nitrogen,
+          phosphorus: lastReading.phosphorus !== undefined ? lastReading.phosphorus : data.phosphorus,
+          potassium: lastReading.potassium !== undefined ? lastReading.potassium : data.potassium,
+          air_temperature: lastReading.air_temperature !== undefined ? lastReading.air_temperature : data.air_temperature,
+          humidity: lastReading.humidity !== undefined ? lastReading.humidity : data.humidity,
+          battery_percentage: lastReading.battery_percentage !== undefined ? lastReading.battery_percentage : data.battery_percentage,
+          ec: lastReading.ec !== undefined ? lastReading.ec : data.ec
+        };
+        
         nodesData[data.node_id] = {
           id: docSnap.id,
           ...data,
-          latest: data.latest_readings || {}
+          latest: sensorData
         };
       });
       
@@ -116,6 +145,12 @@ function App() {
   const currentNode = nodes[selectedNode];
   const currentHistory = nodeHistory[selectedNode] || [];
   const latest = currentNode?.latest || {};
+
+  // ✨ DEBUG: Log pH value to console
+  console.log('DEBUG - Latest readings:', latest);
+  console.log('DEBUG - pH value:', latest.ph);
+  console.log('DEBUG - pH type:', typeof latest.ph);
+  console.log('DEBUG - hasValue(latest.ph):', hasValue(latest.ph));
 
   const getBatteryColor = (percentage) => {
     if (percentage > 60) return "text-green-600";
@@ -353,17 +388,18 @@ function App() {
             Soil Conditions
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* ✨ FIXED: Properly handles 0 values */}
             <Card
               icon={<Droplets className="text-blue-500" />}
               label="Soil Moisture"
-              value={`${latest.moisture || 0}%`}
+              value={formatValue(latest.moisture, '%')}
               status={
-                !latest.moisture ? "No Data" :
+                !hasValue(latest.moisture) ? "No Data" :
                 latest.moisture < 30 ? "Critical" :
                 latest.moisture > 80 ? "Too Wet" : "Optimal"
               }
               color={
-                !latest.moisture ? "bg-gray-100" :
+                !hasValue(latest.moisture) ? "bg-gray-100" :
                 latest.moisture < 30 ? "bg-red-100" :
                 latest.moisture > 80 ? "bg-yellow-100" : "bg-blue-50"
               }
@@ -371,29 +407,29 @@ function App() {
             <Card
               icon={<Thermometer className="text-orange-500" />}
               label="Soil Temperature"
-              value={`${latest.temperature || 0}°C`}
+              value={formatValue(latest.temperature, '°C')}
               status={
-                !latest.temperature ? "No Data" :
+                !hasValue(latest.temperature) ? "No Data" :
                 latest.temperature > 35 ? "Too Hot" :
                 latest.temperature < 15 ? "Too Cold" : "Normal"
               }
               color={
-                !latest.temperature ? "bg-gray-100" :
+                !hasValue(latest.temperature) ? "bg-gray-100" :
                 latest.temperature > 35 || latest.temperature < 15 ? "bg-red-100" : "bg-orange-50"
               }
             />
             <Card
               icon={<Sprout className="text-green-500" />}
               label="Soil pH"
-              value={latest.ph || 0}
+              value={latest.ph !== undefined && latest.ph !== null ? String(latest.ph) : "NO DATA"}
               status={
-                !latest.ph ? "No Data" :
-                latest.ph < 5.5 ? "Too Acidic" :
-                latest.ph > 7.5 ? "Too Alkaline" : "Neutral"
+                !hasValue(latest.ph) ? "No Data" :
+                Number(latest.ph) < 5.5 ? "Too Acidic" :
+                Number(latest.ph) > 7.5 ? "Too Alkaline" : "Neutral"
               }
               color={
-                !latest.ph ? "bg-gray-100" :
-                latest.ph < 5.5 || latest.ph > 7.5 ? "bg-yellow-100" : "bg-green-50"
+                !hasValue(latest.ph) ? "bg-gray-100" :
+                Number(latest.ph) < 5.5 || Number(latest.ph) > 7.5 ? "bg-yellow-100" : "bg-green-50"
               }
             />
           </div>
@@ -406,17 +442,18 @@ function App() {
             Environmental Conditions
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* ✨ FIXED: Properly handles values including 0 */}
             <Card
               icon={<Thermometer className="text-red-500" />}
               label="Air Temperature"
-              value={`${latest.air_temperature || 0}°C`}
+              value={formatValue(latest.air_temperature, '°C')}
               status={
-                !latest.air_temperature ? "No Data" :
+                !hasValue(latest.air_temperature) ? "No Data" :
                 latest.air_temperature > 35 ? "Very Hot" :
                 latest.air_temperature < 18 ? "Cool" : "Comfortable"
               }
               color={
-                !latest.air_temperature ? "bg-gray-100" :
+                !hasValue(latest.air_temperature) ? "bg-gray-100" :
                 latest.air_temperature > 35 ? "bg-red-100" :
                 latest.air_temperature < 18 ? "bg-blue-100" : "bg-red-50"
               }
@@ -424,14 +461,14 @@ function App() {
             <Card
               icon={<Droplets className="text-cyan-500" />}
               label="Air Humidity"
-              value={`${latest.humidity || 0}%`}
+              value={formatValue(latest.humidity, '%')}
               status={
-                !latest.humidity ? "No Data" :
+                !hasValue(latest.humidity) ? "No Data" :
                 latest.humidity < 40 ? "Dry" :
                 latest.humidity > 80 ? "Very Humid" : "Normal"
               }
               color={
-                !latest.humidity ? "bg-gray-100" :
+                !hasValue(latest.humidity) ? "bg-gray-100" :
                 latest.humidity < 40 ? "bg-yellow-100" :
                 latest.humidity > 80 ? "bg-blue-100" : "bg-cyan-50"
               }
@@ -443,19 +480,26 @@ function App() {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h2 className="text-xl font-semibold mb-4 text-gray-700">NPK Levels</h2>
           <div className="grid grid-cols-3 gap-4">
+            {/* ✨ FIXED: Shows 0 values correctly */}
             <div className="text-center p-4 bg-blue-50 rounded-lg">
               <p className="text-sm text-gray-600">Nitrogen (N)</p>
-              <p className="text-2xl font-bold text-blue-700">{latest.nitrogen || 0}</p>
+              <p className="text-2xl font-bold text-blue-700">
+                {formatValue(latest.nitrogen)}
+              </p>
               <p className="text-xs text-gray-500">mg/kg</p>
             </div>
             <div className="text-center p-4 bg-purple-50 rounded-lg">
               <p className="text-sm text-gray-600">Phosphorus (P)</p>
-              <p className="text-2xl font-bold text-purple-700">{latest.phosphorus || 0}</p>
+              <p className="text-2xl font-bold text-purple-700">
+                {formatValue(latest.phosphorus)}
+              </p>
               <p className="text-xs text-gray-500">mg/kg</p>
             </div>
             <div className="text-center p-4 bg-green-50 rounded-lg">
               <p className="text-sm text-gray-600">Potassium (K)</p>
-              <p className="text-2xl font-bold text-green-700">{latest.potassium || 0}</p>
+              <p className="text-2xl font-bold text-green-700">
+                {formatValue(latest.potassium)}
+              </p>
               <p className="text-xs text-gray-500">mg/kg</p>
             </div>
           </div>

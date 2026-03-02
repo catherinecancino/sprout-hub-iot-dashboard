@@ -100,7 +100,7 @@ export default function Settings() {
       if (res.ok) {
         showNotification(
           'success',
-          `"${cropType.charAt(0).toUpperCase() + cropType.slice(1)}" profile updated! Created ${data.chunks_created} knowledge chunks.`
+          `"${cropType}" - Document already processed. Used existing thresholds. Created ${data.chunks_created} search chunks.`
         );
         loadCropProfiles(); // Refresh library
         setActiveTab('library'); // Switch to library view
@@ -647,6 +647,13 @@ export default function Settings() {
 function CropProfileCard({ profile, isSelected, onSelect, onDelete }) {
   const hasThresholds = profile.thresholds && Object.values(profile.thresholds).some(v => v != null);
 
+  // Show processing status
+  const processedDocs = profile.processed_documents || {};
+  const totalProcessed = Object.keys(processedDocs).length;
+  const docsWithThresholds = Object.values(processedDocs).filter(
+    doc => doc.thresholds_extracted
+  ).length;
+
   return (
     <div
       onClick={onSelect}
@@ -668,6 +675,12 @@ function CropProfileCard({ profile, isSelected, onSelect, onDelete }) {
             <p className="text-xs text-gray-400">
               {profile.document_count} document{profile.document_count !== 1 ? 's' : ''}
             </p>
+            {/* processing information */}
+            {totalProcessed > 0 && (
+              <p className="text-xs text-green-600 mt-1">
+                ✓ {docsWithThresholds}/{totalProcessed} processed with thresholds
+              </p>
+            )}
           </div>
         </div>
         <button

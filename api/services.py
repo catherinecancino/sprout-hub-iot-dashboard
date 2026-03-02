@@ -19,7 +19,7 @@ class IoTService:
     NODE_TIMEOUT_MINUTES = 10
 
     @staticmethod
-    def get_thresholds_for_node(node_id):
+    def get_thresholds_for_node(node_id, sensor_data):
         """
         Fetch thresholds from Firebase (extracted from uploaded documents).
         Falls back to DEFAULT_THRESHOLDS only if no document uploaded yet.
@@ -69,7 +69,7 @@ class IoTService:
             "battery_percentage": float(data.get("battery_percentage", 0)),
             "moisture": float(data.get("moisture", 0)),
             "temperature": float(data.get("temperature", 0)),
-            "ph": float(data.get("ph", 0)),
+            "ph": float(data.get("ph", data.get("pH", 0))),  # ✅ Handle both 'ph' and 'pH'
             "nitrogen": float(data.get("nitrogen", 0)),
             "phosphorus": float(data.get("phosphorus", 0)),
             "potassium": float(data.get("potassium", 0)),
@@ -82,14 +82,25 @@ class IoTService:
         # Save to historical readings
         db.collection("readings").document(node_id).collection("history").add(payload)
 
-        # Update node's current status
+        # ✅ FIX: Update node's current status using 'lastReading' to match schema
         db.collection("nodes").document(node_id).set({
             "node_id": node_id,
             "node_name": data.get("node_name", f"Soil Node {node_id.split('_')[-1]}"),
             "crop_type": data.get("crop_type", "default"),
             "last_seen": datetime.now(),
             "status": "online",
-            "latest_readings": payload
+            "lastReading": {  # ✅ Changed from 'latest_readings' to 'lastReading'
+                "battery_percentage": payload["battery_percentage"],
+                "moisture": payload["moisture"],
+                "temperature": payload["temperature"],
+                "ph": payload["ph"],
+                "nitrogen": payload["nitrogen"],
+                "phosphorus": payload["phosphorus"],
+                "potassium": payload["potassium"],
+                "air_temperature": payload["air_temperature"],
+                "humidity": payload["humidity"],
+                "timestamp": payload["timestamp"]
+            }
         }, merge=True)
 
         # Fetch document-based thresholds and evaluate alerts

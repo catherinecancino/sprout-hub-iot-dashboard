@@ -9,6 +9,7 @@ from config.firebase import db
 from .services import IoTService
 from .ai_service import AIChatService
 from .rag_service import RAGService
+from datetime import datetime
 from .knowledge_library_service import KnowledgeLibraryService
 
 
@@ -59,33 +60,117 @@ class UploadDocumentView(APIView):
         if not crop_type:
             return Response({"error": "crop_type is required"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ✨ CHECK IF DOCUMENT ALREADY PROCESSED
+        if RAGService.is_document_processed(document_name, crop_type):
+            print(f"⚠️ Document '{document_name}' already processed - skipping threshold extraction")
+            
+            # Still store in ChromaDB for search updates
+            file_path = default_storage.save(f'temp/{file.name}', ContentFile(file.read()))
+            full_path = default_storage.path(file_path)
+            
+            try:
+                # Extract text
+                file_ext = file.name.split('.')[-1].lower()
+                
+                if file_ext == 'pdf':
+                    text = RAGService.extract_text_from_pdf(full_path)
+                elif file_ext == 'docx':
+                    text = RAGService.extract_text_from_docx(full_path)
+                elif file_ext == 'txt':
+                    text = RAGService.extract_text_from_txt(full_path)
+                else:
+                    raise ValueError(f"Unsupported file type: {file_ext}")
+                
+                # Store in ChromaDB only
+                store_result = RAGService.store_document(text, document_name, crop_type)
+                
+                # Get existing thresholds
+                crop_id = crop_type.lower().replace(" ", "_")
+                existing_profile = db.collection("crop_profiles").document(crop_id).get()
+                existing_thresholds = existing_profile.to_dict().get("thresholds") if existing_profile.exists else None
+                
+                default_storage.delete(file_path)
+                
+                return Response({
+                    "message": f"Document already processed - using existing thresholds",
+                    "document_name": document_name,
+                    "chunks_created": store_result.get("chunks", 0),
+                    "crop_type": crop_type,
+                    "thresholds_extracted": False,
+                    "thresholds": existing_thresholds,
+                    "already_processed": True,
+                    "status": "success"
+                })
+                
+            except Exception as e:
+                if default_storage.exists(file_path):
+                    default_storage.delete(file_path)
+                return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # ✨ DOCUMENT NOT PROCESSED - PROCEED WITH FULL EXTRACTION
+        print(f"🔄 Processing '{document_name}' for the first time...")
+        
         file_path = default_storage.save(f'temp/{file.name}', ContentFile(file.read()))
         full_path = default_storage.path(file_path)
 
         try:
-            metadata = {'crop_type': crop_type.lower(), 'description': description}
-            result = RAGService.process_document(full_path, document_name, metadata)
-
-            # Save to Knowledge Library (permanent crop profile)
+            # Extract text
+            file_ext = file.name.split('.')[-1].lower()
+            
+            if file_ext == 'pdf':
+                text = RAGService.extract_text_from_pdf(full_path)
+            elif file_ext == 'docx':
+                text = RAGService.extract_text_from_docx(full_path)
+            elif file_ext == 'txt':
+                text = RAGService.extract_text_from_txt(full_path)
+            else:
+                raise ValueError(f"Unsupported file type: {file_ext}")
+            
+            if not text.strip():
+                raise ValueError("No text content found in document")
+            
+            # Store in ChromaDB
+            store_result = RAGService.store_document(text, document_name, crop_type)
+            
+            # ✨ EXTRACT THRESHOLDS (ONLY HAPPENS ONCE)
+            extracted_thresholds = RAGService.extract_thresholds_from_text(text, crop_type)
+            
+            # Save to Knowledge Library with processing status
             KnowledgeLibraryService.save_crop_profile(
                 crop_type=crop_type,
-                thresholds=result.get('thresholds'),
+                thresholds=extracted_thresholds,
                 document_name=document_name,
                 description=description
             )
-
+            
+            # Also save to crop_config
+            if extracted_thresholds:
+                crop_id = crop_type.lower().replace(" ", "_")
+                threshold_doc = {
+                    **extracted_thresholds,
+                    "source_document": document_name,
+                    "updated_at": datetime.now(),
+                    "is_active": True,
+                }
+                db.collection("crop_config").document(crop_id).set(threshold_doc, merge=True)
+            
             default_storage.delete(file_path)
 
             return Response({
-                "message": f"Document uploaded and saved to '{crop_type.title()}' crop profile",
-                **result
+                "message": f"Document uploaded and processed for '{crop_type.title()}' crop profile",
+                "document_name": document_name,
+                "chunks_created": store_result.get("chunks", 0),
+                "crop_type": crop_type,
+                "thresholds_extracted": extracted_thresholds is not None and len(extracted_thresholds) > 0,
+                "thresholds": extracted_thresholds,
+                "already_processed": False,
+                "status": "success"
             })
 
         except Exception as e:
             if default_storage.exists(file_path):
                 default_storage.delete(file_path)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class ListDocumentsView(APIView):
     def get(self, request):
@@ -95,7 +180,6 @@ class ListDocumentsView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 class DeleteDocumentView(APIView):
     def delete(self, request, document_name):
         try:
@@ -103,8 +187,6 @@ class DeleteDocumentView(APIView):
             return Response({"message": f"Document '{document_name}' deleted", **result})
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 class SearchKnowledgeView(APIView):
     def post(self, request):
         query = request.data.get('query')
@@ -119,6 +201,46 @@ class SearchKnowledgeView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# ─────────────────────── DOCUMENT PROCESSING VIEW ───────────────────────
+class DocumentProcessingStatusView(APIView):
+    """Check which documents have been processed for a crop"""
+    
+    def get(self, request, crop_type):
+        try:
+            crop_id = crop_type.lower().replace(" ", "_")
+            
+            # Check crop_config
+            config_doc = db.collection("crop_config").document(crop_id).get()
+            
+            if config_doc.exists:
+                data = config_doc.to_dict()
+                processed_docs = data.get("processed_documents", {})
+                
+                return Response({
+                    "crop_type": crop_type,
+                    "total_documents": len(processed_docs),
+                    "processed_documents": [
+                        {
+                            "name": doc_name,
+                            "processed_at": doc_info.get("processed_at"),
+                            "thresholds_found": doc_info.get("thresholds_found", False)
+                        }
+                        for doc_name, doc_info in processed_docs.items()
+                    ]
+                })
+            
+            return Response({
+                "crop_type": crop_type,
+                "total_documents": 0,
+                "processed_documents": [],
+                "message": "No processed documents found"
+            })
+            
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 # ─────────────────────── KNOWLEDGE LIBRARY VIEWS ───────────────────────
 

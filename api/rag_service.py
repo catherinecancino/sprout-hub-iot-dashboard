@@ -2,6 +2,8 @@
 import os
 import json
 import re
+import datetime
+from datetime import datetime
 
 # ── OpenAI ──────────────────────────────────────────────────────────────────
 try:
@@ -183,22 +185,67 @@ class RAGService:
 
     @classmethod
     def delete_document(cls, document_name):
+        """
+        Delete document from ChromaDB and mark as unprocessed in Firebase.
+        """
+        from config.firebase import db
+
         try:
             collection = cls._get_collection()
             all_items  = collection.get()
             ids_to_del = []
+            crop_type_found = None
+            
             for doc_id, meta in zip(
                 all_items.get("ids", []),
                 all_items.get("metadatas", []),
             ):
                 if meta.get("document_name") == document_name:
                     ids_to_del.append(doc_id)
-
+                    if not crop_type_found:
+                        crop_type_found = meta.get("crop_type", "general")       
+                        
+            #Delete from ChromaDB
             if ids_to_del:
                 collection.delete(ids=ids_to_del)
-                return {"status": "deleted", "document": document_name, "chunks_removed": len(ids_to_del)}
+                
+            # Remove from processed_documents in Firebase
+            if crop_type_found:
+                crop_id = crop_type_found.lower().replace(" ", "_")
+                
+                #Remove from crop_profiles
+                profile_ref = db.collection("crop_profiles").document(crop_id)
+                profile_doc = profile_ref.get()
+                
+                if profile_doc.exists:
+                    profile_data = profile_doc.to_dict()
+                    processed_docs = profile_data.get("processed_documents", {})
+                    documents = profile_data.get("documents", [])
+                    
+                    #Remove from both lists
+                    if document_name in processed_docs:
+                        del processed_docs[document_name]
+                    if document_name in documents:
+                        documents.remove(document_name)
+                    
+                    #Update in Firebase
+                    profile_ref.update({
+                        "processed_documents": processed_docs,
+                        "documents": documents,
+                        "document_count": len(documents),
+                        "updated_at": datetime.now()
+                    })
+                
+                print(f" Removed '{document_name}' from processing records")
+                
+                return {"status": "deleted", 
+                        "document": document_name, 
+                        "chunks_removed": len(ids_to_del),
+                        "removed_from_processing_records": True}
 
-            return {"status": "not_found", "document": document_name}
+            return {"status": "deleted" if ids_to_del else "not_found",
+                    "document": document_name,
+                    "chunks_removed": len(ids_to_del)}
 
         except Exception as e:
             return {"status": "error", "error": str(e)}
@@ -272,3 +319,78 @@ TEXT:
         except Exception as e:
             print(f"Threshold extraction error: {e}")
             return {}
+
+# ─────────────────────── CHECK IF DOCUMENT PROCESSED ────────────────────
+
+@classmethod
+def is_document_processed(cls, document_name, crop_type):
+    """
+    Check if a document has already been processed for threshold extraction.
+    
+    Returns:
+        bool: True if already processed, False otherwise
+    """
+    from config.firebase import db
+    
+    try:
+        crop_id = crop_type.lower().replace(" ", "_")
+        
+        # Check in crop_profiles
+        profile_doc = db.collection("crop_profiles").document(crop_id).get()
+        if profile_doc.exists:
+            profile_data = profile_doc.to_dict()
+            processed_docs = profile_data.get("processed_documents", {})
+            
+            if document_name in processed_docs:
+                print(f"✓ Document '{document_name}' already processed for '{crop_type}'")
+                return True
+        
+        print(f"ℹ️ Document '{document_name}' not yet processed for '{crop_type}'")
+        return False
+        
+    except Exception as e:
+        print(f"Error checking processing status: {e}")
+        return False
+
+@classmethod
+def get_processing_status(cls, crop_type):
+    """
+    Get the processing status of all documents for a crop.
+    
+    Returns:
+        dict: Processing status information
+    """
+    from config.firebase import db
+    
+    try:
+        crop_id = crop_type.lower().replace(" ", "_")
+        
+        profile_doc = db.collection("crop_profiles").document(crop_id).get()
+        
+        if profile_doc.exists:
+            profile_data = profile_doc.to_dict()
+            processed_docs = profile_data.get("processed_documents", {})
+            
+            return {
+                "crop_type": crop_type,
+                "total_documents": len(processed_docs),
+                "processed_documents": [
+                    {
+                        "name": doc_name,
+                        "processed_at": doc_info.get("processed_at"),
+                        "thresholds_extracted": doc_info.get("thresholds_extracted", False),
+                        "threshold_count": doc_info.get("threshold_count", 0)
+                    }
+                    for doc_name, doc_info in processed_docs.items()
+                ]
+            }
+        
+        return {
+            "crop_type": crop_type,
+            "total_documents": 0,
+            "processed_documents": []
+        }
+        
+    except Exception as e:
+        print(f"Error getting processing status: {e}")
+        return {"crop_type": crop_type, "total_documents": 0, "processed_documents": [], "error": str(e)}

@@ -24,8 +24,9 @@ class KnowledgeLibraryService:
     def save_crop_profile(crop_type, thresholds, document_name, description=""):
         """
         Save or update a crop profile in the library.
-        NEVER overwrites — always merges so library grows over time.
+        Tracks which documents have been processed for threshold extraction.
         """
+            
         crop_id = crop_type.lower().strip().replace(" ", "_")
 
         # Get existing profile (if any)
@@ -36,6 +37,22 @@ class KnowledgeLibraryService:
         documents = existing.get("documents", [])
         if document_name not in documents:
             documents.append(document_name)
+            
+        # ✨ Track processed documents
+        processed_documents = existing.get("processed_documents", {})
+        processed_documents[document_name] = {
+            "processed_at": datetime.now(),
+            "thresholds_extracted": thresholds is not None and len(thresholds) > 0,
+            "threshold_count": len([v for v in (thresholds or {}).values() if v is not None])
+        }
+        
+        # Only update if not already processed OR if thresholds were found this time
+        if document_name not in processed_documents or (thresholds and len(thresholds) > 0):
+            processed_documents[document_name] = {
+                "processed_at": datetime.now(),
+                "thresholds_extracted": thresholds is not None and len(thresholds) > 0,
+                "threshold_count": len([v for v in (thresholds or {}).values() if v is not None])
+        }
 
         profile = {
             "crop_id": crop_id,
@@ -44,13 +61,14 @@ class KnowledgeLibraryService:
             "thresholds": thresholds or existing.get("thresholds", {}),
             "documents": documents,
             "document_count": len(documents),
+            "processed_documents": processed_documents,
             "created_at": existing.get("created_at", datetime.now()),
             "updated_at": datetime.now(),
             "is_active": False  # Not active until user selects it
         }
 
         db.collection("crop_profiles").document(crop_id).set(profile, merge=True)
-        print(f"✓ Saved crop profile: {crop_id}")
+        print(f"✓ Saved crop profile: {crop_id} (processed docs: {len(processed_documents)})")
         return profile
 
     @staticmethod

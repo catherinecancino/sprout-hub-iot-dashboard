@@ -14,6 +14,7 @@ from .views import (
     AIStatusView,
     NodeConnectivityCheckView,
     NodeComparisonView,
+    DocumentProcessingStatusView
 )
 
 urlpatterns = [
@@ -40,4 +41,7 @@ urlpatterns = [
     path('ai-status/', AIStatusView.as_view(), name='ai-status'),
     path('check-connectivity/', NodeConnectivityCheckView.as_view(), name='check-connectivity'),
     path('compare-nodes/', NodeComparisonView.as_view(), name='compare-nodes'),
+    
+    # Document processing status
+    path('document-status/<str:document_name>/', DocumentProcessingStatusView.as_view(), name='processing-status'),
 ]
