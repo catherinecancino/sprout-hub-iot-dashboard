@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { db } from './firebase';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Sprout, Droplets, Thermometer, Bell, Activity, Battery, WifiOff, Settings as SettingsIcon, Home, CheckCircle } from 'lucide-react';
+import { Sprout, Droplets, Thermometer, Bell, Activity, WifiOff, Settings as SettingsIcon, Home, CheckCircle } from 'lucide-react';
 import Chatbot from './components/Chatbot.jsx';
 import Settings from './components/Settings.jsx';
 
@@ -14,19 +14,98 @@ function App() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [loading, setLoading] = useState(true);
   const [newNodeNotification, setNewNodeNotification] = useState(null);
-  const [currentView, setCurrentView] = useState('dashboard'); // NEW: 'dashboard' or 'settings'
+  const [currentView, setCurrentView] = useState('dashboard');
+  const [cropProfiles, setCropProfiles] = useState([]);  
+  const [assigningCrop, setAssigningCrop] = useState(false);  
 
-  // ✨ Helper function to properly format values (handles 0 correctly)
-  const formatValue = (value, unit = '') => {
-    if (value !== undefined && value !== null) {
-      return `${value}${unit}`;
+  const API_BASE = 'http://127.0.0.1:8000/api/v1';
+
+  // Helper function to properly format values and round to 1 decimal place
+  const formatValue = (val, unit = '') => {
+    if (val === undefined || val === null) return 'No Data';
+    
+    const num = Number(val);
+    if (!isNaN(num)) {
+      return `${num.toFixed(1)}${unit}`;
     }
-    return 'NO DATA';
+    
+    return `${val}${unit}`;
   };
 
-  // ✨ Helper to check if value exists
+  // Helper to check if value exists
   const hasValue = (value) => {
     return value !== undefined && value !== null;
+  };
+
+  // Load crop profiles on mount
+  useEffect(() => {
+    const loadCropProfiles = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/knowledge-library/`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('✓ Loaded crop profiles:', data);
+          const profilesArray = data.crops || data || [];
+          setCropProfiles(profilesArray);
+          console.log('Set crop profiles array:', profilesArray);
+        } else {
+          console.error('Failed to load crop profiles');
+        }
+      } catch (err) {
+        console.error('Error loading crop profiles:', err);
+      }
+    };
+
+    loadCropProfiles();
+  }, []);
+
+  // Function to assign crop to node
+  const assignCropToNode = async (nodeId, cropType) => {
+    if (!nodeId || nodeId === 'undefined' || !cropType) {
+      console.error('Invalid nodeId or cropType:', { nodeId, cropType });
+      alert('❌ Error: Invalid Node ID detected. Check your Firebase database for missing node_id fields.');
+      return;
+    }
+    
+    setAssigningCrop(true);
+    
+    try {
+      console.log(`Assigning ${cropType} to ${nodeId}...`);
+      
+      const response = await fetch(`${API_BASE}/nodes/${nodeId}/assign-crop/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ crop_type: cropType })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✓ Crop assigned successfully:', data);
+        
+        // Update local state immediately for instant UI feedback
+        setNodes(prev => ({
+          ...prev,
+          [nodeId]: {
+            ...prev[nodeId],
+            crop_type: cropType
+          }
+        }));
+        
+        // Show success notification
+        const nodeName = nodes[nodeId]?.node_name || nodeId;
+        const cropName = cropProfiles.find(p => p.crop_id === cropType)?.crop_name || cropType;
+        alert(`✅ Successfully assigned "${cropName}" to ${nodeName}\n\nThresholds will now use crop-specific values from uploaded documents.`);
+      } else {
+        const error = await response.json();
+        console.error('Failed to assign crop:', error);
+        alert(`❌ Failed to assign crop: ${error.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Error assigning crop:', err);
+      alert('❌ Network error. Please check your connection and try again.');
+    } finally {
+      setAssigningCrop(false);
+    }
   };
 
   useEffect(() => {
@@ -39,12 +118,11 @@ function App() {
       
       snapshot.docs.forEach(docSnap => {
         const data = docSnap.data();
-        // ✅ FIX: Read from 'lastReading' to match Firebase schema
         const lastReading = data.lastReading || data.latest_readings || {};
         
         const sensorData = {
           moisture: lastReading.moisture !== undefined ? lastReading.moisture : data.moisture,
-          ph: lastReading.ph !== undefined ? lastReading.ph : (lastReading.pH !== undefined ? lastReading.pH : (data.ph !== undefined ? data.ph : data.pH)),  // ✅ Handle both 'ph' and 'pH'
+          ph: lastReading.ph !== undefined ? lastReading.ph : (lastReading.pH !== undefined ? lastReading.pH : (data.ph !== undefined ? data.ph : data.pH)),
           temperature: lastReading.temperature !== undefined ? lastReading.temperature : data.temperature,
           nitrogen: lastReading.nitrogen !== undefined ? lastReading.nitrogen : data.nitrogen,
           phosphorus: lastReading.phosphorus !== undefined ? lastReading.phosphorus : data.phosphorus,
@@ -55,9 +133,12 @@ function App() {
           ec: lastReading.ec !== undefined ? lastReading.ec : data.ec
         };
         
-        nodesData[data.node_id] = {
+        const safeNodeId = data.node_id || docSnap.id;
+        
+        nodesData[safeNodeId] = {
           id: docSnap.id,
           ...data,
+          node_id: safeNodeId,
           latest: sensorData
         };
       });
@@ -146,29 +227,105 @@ function App() {
   const currentHistory = nodeHistory[selectedNode] || [];
   const latest = currentNode?.latest || {};
 
-  // ✨ DEBUG: Log pH value to console
-  console.log('DEBUG - Latest readings:', latest);
-  console.log('DEBUG - pH value:', latest.ph);
-  console.log('DEBUG - pH type:', typeof latest.ph);
-  console.log('DEBUG - hasValue(latest.ph):', hasValue(latest.ph));
-
-  const getBatteryColor = (percentage) => {
-    if (percentage > 60) return "text-green-600";
-    if (percentage > 20) return "text-yellow-600";
-    return "text-red-600";
+  // Default fallback thresholds 
+  const defaultThresholds = {
+    moisture: { min: 30.0, max: 80.0 },
+    temperature: { min: 15.0, max: 35.0 },
+    ph: { min: 5.5, max: 7.5 },
+    nitrogen: { min: 50.0, max: 150.0 },
+    phosphorus: { min: 20.0, max: 80.0 },
+    potassium: { min: 50.0, max: 200.0 }
   };
+
+  const getDynamicStatus = (sensorType, value, activeProfile) => {
+    if (!hasValue(value)) return { label: "No Data", color: "bg-gray-100" };
+
+    const numValue = Number(value);
+    let rules = defaultThresholds[sensorType];
+
+    // Pull database rules if active
+    if (activeProfile && activeProfile.thresholds) {
+      const t = activeProfile.thresholds;
+      
+      if (sensorType === 'moisture' && t.moisture_min !== undefined) rules = { min: t.moisture_min, max: t.moisture_max };
+      if (sensorType === 'temperature' && t.temp_min !== undefined) rules = { min: t.temp_min, max: t.temp_max };
+      if (sensorType === 'ph' && t.ph_min !== undefined) rules = { min: t.ph_min, max: t.ph_max };
+      
+      if (sensorType === 'nitrogen' && t.nitrogen_min !== undefined) rules = { min: t.nitrogen_min, max: t.nitrogen_max };
+      if (sensorType === 'phosphorus' && t.phosphorus_min !== undefined) rules = { min: t.phosphorus_min, max: t.phosphorus_max };
+      if (sensorType === 'potassium' && t.potassium_min !== undefined) rules = { min: t.potassium_min, max: t.potassium_max };
+    }
+
+    // Status logic
+    if (sensorType === 'moisture') {
+      if (numValue < rules.min) return { label: "Too Dry", color: "bg-red-100" };
+      if (numValue > rules.max) return { label: "Too Wet", color: "bg-blue-100" };
+      return { label: "Optimal", color: "bg-green-50" };
+    }
+    if (sensorType === 'temperature') {
+      if (numValue < rules.min) return { label: "Too Cold", color: "bg-blue-100" };
+      if (numValue > rules.max) return { label: "Too Hot", color: "bg-red-100" };
+      return { label: "Optimal", color: "bg-green-50" };
+    }
+    if (sensorType === 'ph') {
+      if (numValue < rules.min) return { label: "Too Acidic", color: "bg-yellow-100" };
+      if (numValue > rules.max) return { label: "Too Alkaline", color: "bg-yellow-100" };
+      return { label: "Optimal", color: "bg-green-50" };
+    }
+    // NPK Logic
+    if (['nitrogen', 'phosphorus', 'potassium'].includes(sensorType)) {
+      if (numValue < rules.min) return { label: "Too Low", color: "bg-orange-100" };
+      if (numValue > rules.max) return { label: "Too High", color: "bg-red-100" };
+      return { label: "Optimal", color: "bg-green-50" };
+    }
+    // 🌤️ NEW: Static Environmental Logic
+    if (sensorType === 'air_temperature') {
+      if (numValue > 35) return { label: "Very Hot", color: "bg-red-100" };
+      if (numValue < 18) return { label: "Cool", color: "bg-blue-100" };
+      return { label: "Comfortable", color: "bg-green-50" };
+    }
+    if (sensorType === 'humidity') {
+      if (numValue < 40) return { label: "Dry", color: "bg-yellow-100" };
+      if (numValue > 80) return { label: "Very Humid", color: "bg-blue-100" };
+      return { label: "Normal", color: "bg-cyan-50" };
+    }
+  };
+
+  // Find profile
+  const activeCropId = currentNode?.crop_type;
+  const activeProfile = cropProfiles.find(profile => profile.crop_id === activeCropId);
+
+  // Status Checkers
+  const moistureStatus = getDynamicStatus('moisture', latest.moisture, activeProfile);
+  const tempStatus = getDynamicStatus('temperature', latest.temperature, activeProfile);
+  const phStatus = getDynamicStatus('ph', latest.ph, activeProfile);
+  const nitrogenStatus = getDynamicStatus('nitrogen', latest.nitrogen, activeProfile);
+  const phosphorusStatus = getDynamicStatus('phosphorus', latest.phosphorus, activeProfile);
+  const potassiumStatus = getDynamicStatus('potassium', latest.potassium, activeProfile);
+
+  const airTempStatus = getDynamicStatus('air_temperature', latest.air_temperature, null);
+  const humidityStatus = getDynamicStatus('humidity', latest.humidity, null);
 
   const getConnectionStatus = (node) => {
     if (!node) return { color: "bg-gray-400", text: "Unknown" };
+
+    if (node.last_seen && node.last_seen.seconds) {
+      const lastSeenDate = new Date(node.last_seen.seconds * 1000);
+      const now = new Date();
+      const diffInMinutes = (now - lastSeenDate) / (1000 * 60);
+
+      if (diffInMinutes > 5) {
+        return { color: "bg-red-500", text: "Offline" };
+      }
+    }
+
     if (node.status === "online") return { color: "bg-green-500", text: "Online" };
     return { color: "bg-red-500", text: "Offline" };
   };
 
-  // If in settings view, show Settings page
   if (currentView === 'settings') {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Top Navigation Bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 md:px-8 py-4 flex justify-between items-center">
             <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -186,13 +343,9 @@ function App() {
             </button>
           </div>
         </div>
-
-        {/* Settings Content */}
         <div className="p-4 md:p-8">
           <Settings />
         </div>
-
-        {/* Chatbot (still available in settings) */}
         <Chatbot />
       </div>
     );
@@ -217,14 +370,12 @@ function App() {
           <WifiOff className="mx-auto mb-4 text-yellow-600" size={48} />
           <h2 className="text-2xl font-bold text-gray-800 mb-2">No Soil Nodes Detected</h2>
           <p className="text-gray-600 mb-4">Waiting for soil nodes to come online...</p>
-          
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <p className="text-sm text-blue-800 font-semibold mb-2">🔍 Auto-Detection Active</p>
             <p className="text-xs text-blue-700">
               New nodes will automatically appear when they send their first reading.
             </p>
           </div>
-          
           <button 
             onClick={() => window.location.reload()} 
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
@@ -240,7 +391,6 @@ function App() {
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* New Node Notification */}
         {newNodeNotification && (
           <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-6 py-4 rounded-lg shadow-2xl animate-slide-in-right flex items-center gap-3">
             <CheckCircle className="text-green-200" size={24} />
@@ -251,7 +401,6 @@ function App() {
           </div>
         )}
 
-        {/* Header with Settings Button */}
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-2">
@@ -266,7 +415,6 @@ function App() {
           </div>
           
           <div className="flex gap-3 items-center">
-            {/* Settings Button - NEW */}
             <button
               onClick={() => setCurrentView('settings')}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-all"
@@ -275,7 +423,6 @@ function App() {
               Settings
             </button>
 
-            {/* Alerts */}
             <div className="relative">
               <Bell className="text-gray-600" size={24} />
               {alerts.length > 0 && (
@@ -287,11 +434,9 @@ function App() {
           </div>
         </div>
 
-        {/* Node Selector Tabs */}
         <div className="bg-white rounded-xl shadow-sm p-2 flex gap-2 overflow-x-auto">
           {Object.entries(nodes).map(([nodeId, nodeData]) => {
             const connectionStatus = getConnectionStatus(nodeData);
-            const batteryPercentage = nodeData.latest?.battery_percentage || 0;
             const isNew = newNodeNotification?.nodeId === nodeId;
             
             return (
@@ -308,11 +453,8 @@ function App() {
                   {nodeData.node_name || nodeId.toUpperCase()}
                   
                   <span className={`inline-block w-2 h-2 ${connectionStatus.color} rounded-full ${
-                    nodeData.status === 'online' ? 'animate-pulse' : ''
+                    connectionStatus.text === 'Online' ? 'animate-pulse' : ''
                   }`}></span>
-                  
-                  <Battery className={`${getBatteryColor(batteryPercentage)} ml-1`} size={16} />
-                  <span className="text-xs">{batteryPercentage}%</span>
                   
                   {isNew && (
                     <span className="absolute -top-1 -right-1 bg-green-400 text-white text-xs px-2 py-0.5 rounded-full">
@@ -325,7 +467,6 @@ function App() {
           })}
         </div>
 
-        {/* Alerts Section */}
         {alerts.length > 0 && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg shadow-sm">
             <h3 className="font-bold text-red-700 mb-2 flex items-center gap-2">
@@ -345,9 +486,8 @@ function App() {
           </div>
         )}
 
-        {/* Node Status Card */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center mb-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-700">
                 {currentNode?.node_name || selectedNode}
@@ -358,15 +498,8 @@ function App() {
                   : 'Never'}
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              {/* Battery Status */}
-              <div className="text-center">
-                <Battery className={`mx-auto ${getBatteryColor(latest.battery_percentage || 0)}`} size={32} />
-                <p className="text-sm font-semibold mt-1">{latest.battery_percentage || 0}%</p>
-                <p className="text-xs text-gray-500">Battery</p>
-              </div>
-              
-              {/* Connection Status */}
+            
+            <div className="flex items-center gap-4">            
               <div className="text-center">
                 <div className={`w-12 h-12 rounded-full ${getConnectionStatus(currentNode).color} flex items-center justify-center`}>
                   {currentNode?.status === 'online' ? (
@@ -379,135 +512,99 @@ function App() {
               </div>
             </div>
           </div>
+
+          <div className="mt-4 p-3 bg-green-50 rounded-lg border-2 border-green-200">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Sprout className="text-green-600" size={20} />
+                <span className="text-sm font-medium text-gray-700">Assigned Crop:</span>
+              </div>
+              
+              <select
+                value={currentNode?.crop_type || 'default'}
+                onChange={(e) => assignCropToNode(selectedNode, e.target.value)}
+                disabled={assigningCrop}
+                className="px-3 py-1.5 rounded-lg border-2 border-green-300 bg-white text-sm font-medium text-gray-700 hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                <option value="default">No specific crop (default thresholds)</option>
+                {cropProfiles.map(profile => (
+                  <option key={profile.crop_id} value={profile.crop_id}>
+                    {profile.crop_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {assigningCrop && (
+              <p className="text-xs text-green-600 animate-pulse flex items-center gap-1">
+                <Activity size={12} className="animate-spin" />
+                Updating crop assignment...
+              </p>
+            )}
+            
+            {currentNode?.crop_type && currentNode.crop_type !== 'default' && !assigningCrop && (
+              <p className="text-xs text-green-600 flex items-center gap-1">
+                <CheckCircle size={12} />
+                Using crop-specific thresholds from uploaded documents
+              </p>
+            )}
+            
+            {(!currentNode?.crop_type || currentNode.crop_type === 'default') && !assigningCrop && (
+              <p className="text-xs text-gray-500">
+                Upload crop profiles in Settings to use specific thresholds
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* Soil Conditions Section */}
+        {/* 🌿 UPDATED: SOIL CONDITIONS SECTION (RAG Controlled) */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h2 className="text-xl font-semibold mb-4 text-gray-700 flex items-center gap-2">
             <Sprout className="text-green-600" size={24} />
             Soil Conditions
+            {activeCropId && activeCropId !== 'default' && (
+              <span className="text-sm font-normal text-green-700 bg-green-100 px-3 py-0.5 rounded-full ml-2 capitalize">
+                {activeCropId.replace('_', ' ')}
+              </span>
+            )}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* ✨ FIXED: Properly handles 0 values */}
-            <Card
-              icon={<Droplets className="text-blue-500" />}
-              label="Soil Moisture"
-              value={formatValue(latest.moisture, '%')}
-              status={
-                !hasValue(latest.moisture) ? "No Data" :
-                latest.moisture < 30 ? "Critical" :
-                latest.moisture > 80 ? "Too Wet" : "Optimal"
-              }
-              color={
-                !hasValue(latest.moisture) ? "bg-gray-100" :
-                latest.moisture < 30 ? "bg-red-100" :
-                latest.moisture > 80 ? "bg-yellow-100" : "bg-blue-50"
-              }
-            />
-            <Card
-              icon={<Thermometer className="text-orange-500" />}
-              label="Soil Temperature"
-              value={formatValue(latest.temperature, '°C')}
-              status={
-                !hasValue(latest.temperature) ? "No Data" :
-                latest.temperature > 35 ? "Too Hot" :
-                latest.temperature < 15 ? "Too Cold" : "Normal"
-              }
-              color={
-                !hasValue(latest.temperature) ? "bg-gray-100" :
-                latest.temperature > 35 || latest.temperature < 15 ? "bg-red-100" : "bg-orange-50"
-              }
-            />
-            <Card
-              icon={<Sprout className="text-green-500" />}
-              label="Soil pH"
-              value={latest.ph !== undefined && latest.ph !== null ? String(latest.ph) : "NO DATA"}
-              status={
-                !hasValue(latest.ph) ? "No Data" :
-                Number(latest.ph) < 5.5 ? "Too Acidic" :
-                Number(latest.ph) > 7.5 ? "Too Alkaline" : "Neutral"
-              }
-              color={
-                !hasValue(latest.ph) ? "bg-gray-100" :
-                Number(latest.ph) < 5.5 || Number(latest.ph) > 7.5 ? "bg-yellow-100" : "bg-green-50"
-              }
-            />
+            <Card icon={<Droplets className="text-blue-500" />} label="Soil Moisture" value={formatValue(latest.moisture, '%')} status={moistureStatus.label} color={moistureStatus.color} />
+            <Card icon={<Thermometer className="text-orange-500" />} label="Soil Temperature" value={formatValue(latest.temperature, '°C')} status={tempStatus.label} color={tempStatus.color} />
+            <Card icon={<Sprout className="text-green-500" />} label="Soil pH" value={latest.ph !== undefined && latest.ph !== null ? String(latest.ph) : "NO DATA"} status={phStatus.label} color={phStatus.color} />
+            
+            {/* Added NPK Cards directly into the RAG Grid using the imported Activity Icon */}
+            <Card icon={<Activity className="text-blue-500" />} label="Nitrogen (N)" value={formatValue(latest.nitrogen, ' mg/kg')} status={nitrogenStatus.label} color={nitrogenStatus.color} />
+            <Card icon={<Activity className="text-purple-500" />} label="Phosphorus (P)" value={formatValue(latest.phosphorus, ' mg/kg')} status={phosphorusStatus.label} color={phosphorusStatus.color} />
+            <Card icon={<Activity className="text-green-500" />} label="Potassium (K)" value={formatValue(latest.potassium, ' mg/kg')} status={potassiumStatus.label} color={potassiumStatus.color} />
           </div>
         </div>
 
-        {/* Environmental Conditions Section */}
+        {/* 🌤️ ENVIRONMENTAL CONDITIONS SECTION (Static Logic) */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h2 className="text-xl font-semibold mb-4 text-gray-700 flex items-center gap-2">
             <Activity className="text-purple-600" size={24} />
             Environmental Conditions
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* ✨ FIXED: Properly handles values including 0 */}
             <Card
               icon={<Thermometer className="text-red-500" />}
               label="Air Temperature"
               value={formatValue(latest.air_temperature, '°C')}
-              status={
-                !hasValue(latest.air_temperature) ? "No Data" :
-                latest.air_temperature > 35 ? "Very Hot" :
-                latest.air_temperature < 18 ? "Cool" : "Comfortable"
-              }
-              color={
-                !hasValue(latest.air_temperature) ? "bg-gray-100" :
-                latest.air_temperature > 35 ? "bg-red-100" :
-                latest.air_temperature < 18 ? "bg-blue-100" : "bg-red-50"
-              }
+              status={airTempStatus.label}
+              color={airTempStatus.color}
             />
             <Card
               icon={<Droplets className="text-cyan-500" />}
               label="Air Humidity"
               value={formatValue(latest.humidity, '%')}
-              status={
-                !hasValue(latest.humidity) ? "No Data" :
-                latest.humidity < 40 ? "Dry" :
-                latest.humidity > 80 ? "Very Humid" : "Normal"
-              }
-              color={
-                !hasValue(latest.humidity) ? "bg-gray-100" :
-                latest.humidity < 40 ? "bg-yellow-100" :
-                latest.humidity > 80 ? "bg-blue-100" : "bg-cyan-50"
-              }
+              status={humidityStatus.label}
+              color={humidityStatus.color}
             />
           </div>
         </div>
 
-        {/* NPK Values */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h2 className="text-xl font-semibold mb-4 text-gray-700">NPK Levels</h2>
-          <div className="grid grid-cols-3 gap-4">
-            {/* ✨ FIXED: Shows 0 values correctly */}
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm text-gray-600">Nitrogen (N)</p>
-              <p className="text-2xl font-bold text-blue-700">
-                {formatValue(latest.nitrogen)}
-              </p>
-              <p className="text-xs text-gray-500">mg/kg</p>
-            </div>
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <p className="text-sm text-gray-600">Phosphorus (P)</p>
-              <p className="text-2xl font-bold text-purple-700">
-                {formatValue(latest.phosphorus)}
-              </p>
-              <p className="text-xs text-gray-500">mg/kg</p>
-            </div>
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <p className="text-sm text-gray-600">Potassium (K)</p>
-              <p className="text-2xl font-bold text-green-700">
-                {formatValue(latest.potassium)}
-              </p>
-              <p className="text-xs text-gray-500">mg/kg</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Soil Conditions Chart */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <h2 className="text-xl font-semibold mb-4 text-gray-700">
               Soil Conditions - {currentNode?.node_name || selectedNode}
@@ -528,7 +625,6 @@ function App() {
             </div>
           </div>
 
-          {/* Environmental Conditions Chart */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <h2 className="text-xl font-semibold mb-4 text-gray-700">
               Environmental Conditions - {currentNode?.node_name || selectedNode}
@@ -551,7 +647,6 @@ function App() {
 
       </div>
 
-      {/* Chatbot Widget */}
       <Chatbot />
     </div>
   );
@@ -567,7 +662,9 @@ function Card({ icon, label, value, status, color }) {
           {status}
         </span>
       </div>
-      <div className="p-3 bg-gray-50 rounded-full shadow-inner">{icon}</div>
+      <div className="p-3 bg-gray-50 rounded-full shadow-sm">
+        {icon}
+      </div>
     </div>
   );
 }
