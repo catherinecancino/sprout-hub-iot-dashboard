@@ -276,41 +276,54 @@ class CropProfileDetailView(APIView):
 
 
 class AssignCropToNodeView(APIView):
-    """
-    POST: Assign active crop to a node (what the dropdown triggers)
-    GET:  Get current active crop for a node
-    """
+    """Assign a crop profile to a specific node"""
 
-    def post(self, request):
-        node_id = request.data.get('node_id')
+    def post(self, request, node_id):
         crop_type = request.data.get('crop_type')
 
-        if not node_id or not crop_type:
+        if not crop_type:
             return Response(
-                {"error": "node_id and crop_type are required"},
+                {"error": "crop_type is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         try:
-            result = KnowledgeLibraryService.set_active_crop_for_node(node_id, crop_type)
+            #get node
+            node_ref = db.collection("nodes").document(node_id)
+            node_doc = node_ref.get()
+            if not node_doc.exists:
+                return Response({"error": f"Node '{node_id}' not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+            #update crop type
+            node_ref.update({
+                'crop_type': crop_type,
+                'updated_at': datetime.now()})
+            
+            #re-evaluate alerts with new thresholds
+            node_data = node_doc.to_dict()
+            latest_readings = node_data.get('lastReading', {})
+            
+            if latest_readings:
+                from .services import IoTService
+                thresholds = IoTService.get_thresholds_for_node(node_id, latest_readings)
+                IoTService.evaluate_alerts(node_id, latest_readings, thresholds)
+                
+            print(f"✓ Assigned {crop_type} to {node_id}")
+            
             return Response({
-                "message": f"Node '{node_id}' switched to '{crop_type}' profile",
-                **result
-            })
+                "message": f"Successfully assigned {crop_type} to {node_id}",
+                "node_id": node_id,
+                "crop_type": crop_type
+            }, status=status.HTTP_200_OK)
+            
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def get(self, request):
-        node_id = request.query_params.get('node_id')
-        if not node_id:
-            return Response({"error": "node_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            active_crop = KnowledgeLibraryService.get_active_crop_for_node(node_id)
-            thresholds, _ = KnowledgeLibraryService.get_active_thresholds_for_node(node_id)
-            return Response({"node_id": node_id, "active_crop": active_crop, "thresholds": thresholds})
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
+            print(f"Error assigning crop: {e}")
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
 # ─────────────────────── UTILITY VIEWS ───────────────────────
 
 class AIStatusView(APIView):
