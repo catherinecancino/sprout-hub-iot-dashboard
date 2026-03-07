@@ -13,7 +13,6 @@ class IoTService:
         "ph_max": 7.5,
         "temp_min": 15.0,
         "temp_max": 35.0,
-        "battery_min": 20.0,
     }
 
     NODE_TIMEOUT_MINUTES = 10
@@ -66,7 +65,6 @@ class IoTService:
 
         payload = {
             "node_id": node_id,
-            "battery_percentage": float(data.get("battery_percentage", 0)),
             "moisture": float(data.get("moisture", 0)),
             "temperature": float(data.get("temperature", 0)),
             "ph": float(data.get("ph", data.get("pH", 0))),  # ✅ Handle both 'ph' and 'pH'
@@ -90,7 +88,6 @@ class IoTService:
             "last_seen": datetime.now(),
             "status": "online",
             "lastReading": {  # ✅ Changed from 'latest_readings' to 'lastReading'
-                "battery_percentage": payload["battery_percentage"],
                 "moisture": payload["moisture"],
                 "temperature": payload["temperature"],
                 "ph": payload["ph"],
@@ -116,19 +113,9 @@ class IoTService:
         current_violations = {}
 
         # Safely extract values (returns None if the key is missing from Firebase)
-        battery = data.get("battery_percentage")
         moisture = data.get("moisture")
         ph = data.get("ph")
         temp = data.get("temperature")
-
-        # Battery Check
-        if battery is not None and battery < thresholds.get("battery_min", 20.0):
-            current_violations["battery_low"] = {
-                "message": f"{node_id}: Low Battery ({battery}%)",
-                "severity": "high",
-                "parameter": "battery",
-                "value": battery
-            }
 
         # Moisture Check
         if moisture is not None:
