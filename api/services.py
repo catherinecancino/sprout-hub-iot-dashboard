@@ -115,63 +115,72 @@ class IoTService:
 
         current_violations = {}
 
-        # Battery
-        if data["battery_percentage"] < thresholds.get("battery_min", 20.0):
+        # Safely extract values (returns None if the key is missing from Firebase)
+        battery = data.get("battery_percentage")
+        moisture = data.get("moisture")
+        ph = data.get("ph")
+        temp = data.get("temperature")
+
+        # Battery Check
+        if battery is not None and battery < thresholds.get("battery_min", 20.0):
             current_violations["battery_low"] = {
-                "message": f"{node_id}: Low Battery ({data['battery_percentage']}%)",
+                "message": f"{node_id}: Low Battery ({battery}%)",
                 "severity": "high",
                 "parameter": "battery",
-                "value": data["battery_percentage"]
+                "value": battery
             }
 
-        # Moisture
-        if data["moisture"] < thresholds["moisture_min"]:
-            current_violations["moisture_low"] = {
-                "message": f"{node_id}: Low Moisture ({data['moisture']}%) - Below {thresholds['moisture_min']}%",
-                "severity": "high",
-                "parameter": "moisture",
-                "value": data["moisture"]
-            }
-        elif data["moisture"] > thresholds["moisture_max"]:
-            current_violations["moisture_high"] = {
-                "message": f"{node_id}: Excess Moisture ({data['moisture']}%) - Above {thresholds['moisture_max']}%",
-                "severity": "medium",
-                "parameter": "moisture",
-                "value": data["moisture"]
-            }
+        # Moisture Check
+        if moisture is not None:
+            if moisture < thresholds.get("moisture_min", 30.0):
+                current_violations["moisture_low"] = {
+                    "message": f"{node_id}: Low Moisture ({moisture}%) - Below {thresholds.get('moisture_min')}%",
+                    "severity": "high",
+                    "parameter": "moisture",
+                    "value": moisture
+                }
+            elif moisture > thresholds.get("moisture_max", 80.0):
+                current_violations["moisture_high"] = {
+                    "message": f"{node_id}: Excess Moisture ({moisture}%) - Above {thresholds.get('moisture_max')}%",
+                    "severity": "medium",
+                    "parameter": "moisture",
+                    "value": moisture
+                }
 
-        # pH
-        if data["ph"] < thresholds["ph_min"]:
-            current_violations["ph_low"] = {
-                "message": f"{node_id}: Soil Too Acidic (pH {data['ph']}) - Below {thresholds['ph_min']}",
-                "severity": "medium",
-                "parameter": "ph",
-                "value": data["ph"]
-            }
-        elif data["ph"] > thresholds["ph_max"]:
-            current_violations["ph_high"] = {
-                "message": f"{node_id}: Soil Too Alkaline (pH {data['ph']}) - Above {thresholds['ph_max']}",
-                "severity": "medium",
-                "parameter": "ph",
-                "value": data["ph"]
-            }
+        # pH Check
+        if ph is not None:
+            if ph < thresholds.get("ph_min", 5.5):
+                current_violations["ph_low"] = {
+                    "message": f"{node_id}: Soil Too Acidic (pH {ph}) - Below {thresholds.get('ph_min')}",
+                    "severity": "medium",
+                    "parameter": "ph",
+                    "value": ph
+                }
+            elif ph > thresholds.get("ph_max", 7.5):
+                current_violations["ph_high"] = {
+                    "message": f"{node_id}: Soil Too Alkaline (pH {ph}) - Above {thresholds.get('ph_max')}",
+                    "severity": "medium",
+                    "parameter": "ph",
+                    "value": ph
+                }
 
-        # Temperature
-        if data["temperature"] > thresholds["temp_max"]:
-            current_violations["temp_high"] = {
-                "message": f"{node_id}: Heat Stress ({data['temperature']}°C) - Above {thresholds['temp_max']}°C",
-                "severity": "high",
-                "parameter": "temperature",
-                "value": data["temperature"]
-            }
-        elif data["temperature"] < thresholds["temp_min"]:
-            current_violations["temp_low"] = {
-                "message": f"{node_id}: Low Temperature ({data['temperature']}°C) - Below {thresholds['temp_min']}°C",
-                "severity": "medium",
-                "parameter": "temperature",
-                "value": data["temperature"]
-            }
-
+        # Temperature Check
+        if temp is not None:
+            if temp > thresholds.get("temp_max", 35.0):
+                current_violations["temp_high"] = {
+                    "message": f"{node_id}: Heat Stress ({temp}°C) - Above {thresholds.get('temp_max')}°C",
+                    "severity": "high",
+                    "parameter": "temperature",
+                    "value": temp
+                }
+            elif temp < thresholds.get("temp_min", 15.0):
+                current_violations["temp_low"] = {
+                    "message": f"{node_id}: Low Temperature ({temp}°C) - Below {thresholds.get('temp_min')}°C",
+                    "severity": "medium",
+                    "parameter": "temperature",
+                    "value": temp
+                }
+                
         # Fetch active alerts and resolve/create
         active_alerts = (
             db.collection("alerts")
