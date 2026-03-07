@@ -41,7 +41,7 @@ export default function Chatbot() {
       const res = await fetch(`${API_BASE}/chat/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: userMsg.text })
+        body: JSON.stringify({ question: userMsg.text, language: language })
       });
       
       const data = await res.json();
@@ -69,6 +69,21 @@ export default function Chatbot() {
   const placeholderText = language === 'fil' 
     ? 'Magtanong tungkol sa lupa, tanim...'
     : 'Ask about soil, crops...';
+
+  // Helper function to render **bold** text
+  const formatText = (text) => {
+    // Split the text by the ** tags
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    
+    return parts.map((part, index) => {
+      // If the part has stars, remove the stars and make it bold
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={index} className="font-bold text-green-900">{part.slice(2, -2)}</strong>;
+      }
+      // Otherwise, just return the normal text
+      return <span key={index}>{part}</span>;
+    });
+  };
 
   return (
     <div className="fixed bottom-6 right-6 z-50">
@@ -98,12 +113,12 @@ export default function Chatbot() {
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
             {messages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] p-3 rounded-xl text-sm ${
+                <div className={`whitespace-pre-wrap max-w-[85%] p-3 rounded-xl text-sm ${
                   msg.role === 'user' 
                     ? 'bg-green-600 text-white rounded-br-none' 
                     : 'bg-white border border-gray-200 text-gray-800 rounded-bl-none shadow-sm'
                 }`}>
-                  {msg.text}
+                  {formatText(msg.text)}
                   {msg.model && (
                     <div className="text-xs text-gray-400 mt-1">
                       via {msg.model}
