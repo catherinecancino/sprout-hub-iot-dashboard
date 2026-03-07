@@ -322,75 +322,75 @@ TEXT:
 
 # ─────────────────────── CHECK IF DOCUMENT PROCESSED ────────────────────
 
-@classmethod
-def is_document_processed(cls, document_name, crop_type):
-    """
-    Check if a document has already been processed for threshold extraction.
-    
-    Returns:
-        bool: True if already processed, False otherwise
-    """
-    from config.firebase import db
-    
-    try:
-        crop_id = crop_type.lower().replace(" ", "_")
+    @classmethod
+    def is_document_processed(cls, document_name, crop_type):
+        """
+        Check if a document has already been processed for threshold extraction.
         
-        # Check in crop_profiles
-        profile_doc = db.collection("crop_profiles").document(crop_id).get()
-        if profile_doc.exists:
-            profile_data = profile_doc.to_dict()
-            processed_docs = profile_data.get("processed_documents", {})
+        Returns:
+            bool: True if already processed, False otherwise
+        """
+        from config.firebase import db
+        
+        try:
+            crop_id = crop_type.lower().replace(" ", "_")
             
-            if document_name in processed_docs:
-                print(f"✓ Document '{document_name}' already processed for '{crop_type}'")
-                return True
-        
-        print(f"ℹ️ Document '{document_name}' not yet processed for '{crop_type}'")
-        return False
-        
-    except Exception as e:
-        print(f"Error checking processing status: {e}")
-        return False
+            # Check in crop_profiles
+            profile_doc = db.collection("crop_profiles").document(crop_id).get()
+            if profile_doc.exists:
+                profile_data = profile_doc.to_dict()
+                processed_docs = profile_data.get("processed_documents", {})
+                
+                if document_name in processed_docs:
+                    print(f"✓ Document '{document_name}' already processed for '{crop_type}'")
+                    return True
+            
+            print(f"ℹ️ Document '{document_name}' not yet processed for '{crop_type}'")
+            return False
+            
+        except Exception as e:
+            print(f"Error checking processing status: {e}")
+            return False
 
-@classmethod
-def get_processing_status(cls, crop_type):
-    """
-    Get the processing status of all documents for a crop.
-    
-    Returns:
-        dict: Processing status information
-    """
-    from config.firebase import db
-    
-    try:
-        crop_id = crop_type.lower().replace(" ", "_")
+    @classmethod
+    def get_processing_status(cls, crop_type):
+        """
+        Get the processing status of all documents for a crop.
         
-        profile_doc = db.collection("crop_profiles").document(crop_id).get()
+        Returns:
+            dict: Processing status information
+        """
+        from config.firebase import db
         
-        if profile_doc.exists:
-            profile_data = profile_doc.to_dict()
-            processed_docs = profile_data.get("processed_documents", {})
+        try:
+            crop_id = crop_type.lower().replace(" ", "_")
+            
+            profile_doc = db.collection("crop_profiles").document(crop_id).get()
+            
+            if profile_doc.exists:
+                profile_data = profile_doc.to_dict()
+                processed_docs = profile_data.get("processed_documents", {})
+                
+                return {
+                    "crop_type": crop_type,
+                    "total_documents": len(processed_docs),
+                    "processed_documents": [
+                        {
+                            "name": doc_name,
+                            "processed_at": doc_info.get("processed_at"),
+                            "thresholds_extracted": doc_info.get("thresholds_extracted", False),
+                            "threshold_count": doc_info.get("threshold_count", 0)
+                        }
+                        for doc_name, doc_info in processed_docs.items()
+                    ]
+                }
             
             return {
                 "crop_type": crop_type,
-                "total_documents": len(processed_docs),
-                "processed_documents": [
-                    {
-                        "name": doc_name,
-                        "processed_at": doc_info.get("processed_at"),
-                        "thresholds_extracted": doc_info.get("thresholds_extracted", False),
-                        "threshold_count": doc_info.get("threshold_count", 0)
-                    }
-                    for doc_name, doc_info in processed_docs.items()
-                ]
+                "total_documents": 0,
+                "processed_documents": []
             }
-        
-        return {
-            "crop_type": crop_type,
-            "total_documents": 0,
-            "processed_documents": []
-        }
-        
-    except Exception as e:
-        print(f"Error getting processing status: {e}")
-        return {"crop_type": crop_type, "total_documents": 0, "processed_documents": [], "error": str(e)}
+            
+        except Exception as e:
+            print(f"Error getting processing status: {e}")
+            return {"crop_type": crop_type, "total_documents": 0, "processed_documents": [], "error": str(e)}
