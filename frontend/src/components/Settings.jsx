@@ -81,12 +81,16 @@ export default function Settings() {
 
     if (!window.pendingFile) return;
 
+    //save local reference
+    const fileToUploadd = window.pendingFile;
+
     setUploading(true);
     closeModal();
 
     const formData = new FormData();
-    formData.append('file', window.pendingFile);
-    formData.append('document_name', window.pendingFile.name);
+    //use local reference
+    formData.append('file', fileToUploadd);
+    formData.append('document_name', fileToUploadd.name);
     formData.append('crop_type', cropType);
     formData.append('description', description);
 
