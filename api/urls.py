@@ -35,7 +35,7 @@ urlpatterns = [
     path('knowledge-library/<str:crop_type>/', CropProfileDetailView.as_view(), name='crop-profile-detail'),
 
     # ── Node Crop Assignment ──
-    path('assign-crop/', AssignCropToNodeView.as_view(), name='assign-crop'),
+    path('nodes/<str:node_id>/assign-crop/', AssignCropToNodeView.as_view(), name='assign-crop'),
 
     # ── Utilities ──
     path('ai-status/', AIStatusView.as_view(), name='ai-status'),
