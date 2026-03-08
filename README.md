@@ -26,7 +26,7 @@ A full-stack smart agriculture web application that monitors real-time soil and 
 | Frontend | React (Vite), Recharts |
 | AI / LLM | OpenAI GPT-4o-mini |
 | Vector Store | ChromaDB (RAG) |
-| IoT Hardware | Arduino Gateway, 7-in-1 Soil Sensor (CWT NPKPHCTH-S), DHT11 |
+| IoT Hardware | Raspberry Pi, 7-in-1 Soil Sensor (CWT NPKPHCTH-S), DHT11 |
 
 ---
 
