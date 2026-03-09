@@ -9,9 +9,8 @@ from config.firebase import db
 from .services import IoTService
 from .ai_service import AIChatService
 from .rag_service import RAGService
-from datetime import datetime
+from datetime import datetime, timezone
 from .knowledge_library_service import KnowledgeLibraryService
-
 
 # ─────────────────────── EXISTING VIEWS ───────────────────────
 
@@ -279,35 +278,28 @@ class AssignCropToNodeView(APIView):
     """Assign a crop profile to a specific node"""
 
     def post(self, request, node_id):
-        crop_type = request.data.get('crop_type')
-
-        if not crop_type:
-            return Response(
-                {"error": "crop_type is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
         try:
-            #get node
-            node_ref = db.collection("nodes").document(node_id)
+            crop_type = request.data.get('crop_type')
+            if not crop_type:
+                return Response({"error": "crop_type is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 1. Try finding the document directly by its ID
+            node_ref = db.collection('nodes').document(node_id)
             node_doc = node_ref.get()
-            if not node_doc.exists:
-                return Response({"error": f"Node '{node_id}' not found"}, status=status.HTTP_404_NOT_FOUND)
             
-            #update crop type
-            node_ref.update({
-                'crop_type': crop_type,
-                'updated_at': datetime.now()})
-            
-            #re-evaluate alerts with new thresholds
-            node_data = node_doc.to_dict()
-            latest_readings = node_data.get('lastReading', {})
-            
-            if latest_readings:
-                from .services import IoTService
-                thresholds = IoTService.get_thresholds_for_node(node_id, latest_readings)
-                IoTService.evaluate_alerts(node_id, latest_readings, thresholds)
+            if node_doc.exists:
+                # Use merge=True so it doesn't crash if fields are missing
+                node_ref.set({"crop_type": crop_type}, merge=True)
+            else:
+                # 2. FALLBACK: If document ID is random (e.g. "aB3dE5..."), search by the 'node_id' field instead
+                query = db.collection('nodes').where('node_id', '==', node_id).get()
                 
-            print(f"✓ Assigned {crop_type} to {node_id}")
+                if not query:
+                    return Response({"error": f"Node '{node_id}' not found in Firebase."}, status=status.HTTP_404_NOT_FOUND)
+                
+                # Update the found document
+                for doc in query:
+                    doc.reference.set({"crop_type": crop_type}, merge=True)
             
             return Response({
                 "message": f"Successfully assigned {crop_type} to {node_id}",
