@@ -213,10 +213,10 @@ export default function Settings() {
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
           <Book className="text-green-600" size={30} />
-          Settings
+          {t('settings')}
         </h1>
         <p className="text-gray-500 mt-1 text-sm">
-          Manage your Knowledge Library, language preferences, and node assignments
+          {t('knowledgeBaseDesc')}
         </p>
       </div>
 
@@ -224,10 +224,10 @@ export default function Settings() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="flex border-b border-gray-200">
           {[
-            { id: 'library', icon: <Book size={16} />, label: 'Knowledge Library' },
-            { id: 'upload', icon: <Upload size={16} />, label: 'Upload Document' },
-            { id: 'search', icon: <Search size={16} />, label: 'Search Knowledge' },
-            { id: 'language', icon: <Globe size={16} />, label: 'Language' },
+            { id: 'library', icon: <Book size={16} />, label: t('knowledgeBaseSettings') },
+            { id: 'upload', icon: <Upload size={16} />, label: t('uploadDocument') },
+            { id: 'search', icon: <Search size={16} />, label: t('testKnowledgeBase') },
+            { id: 'language', icon: <Globe size={16} />, label: t('languageSettings') },
           ].map(tab => (
             <button
               key={tab.id}
@@ -249,9 +249,9 @@ export default function Settings() {
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h2 className="text-lg font-bold text-gray-800">Crop Profile Library</h2>
+                <h2 className="text-lg font-bold text-gray-800">{t('uploadedDocuments')}</h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  {cropProfiles.length} crop profile{cropProfiles.length !== 1 ? 's' : ''} stored permanently
+                  {cropProfiles.length} {t('documentsInKnowledgeBase')}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -275,20 +275,20 @@ export default function Settings() {
             {loadingLibrary ? (
               <div className="flex items-center justify-center py-16">
                 <Loader className="animate-spin text-green-600" size={32} />
-                <span className="ml-3 text-gray-500">Loading library...</span>
+                <span className="ml-3 text-gray-500">{t('loading')}</span>
               </div>
             ) : cropProfiles.length === 0 ? (
               <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
                 <Leaf className="mx-auto mb-4 text-gray-400" size={48} />
-                <p className="text-gray-600 font-semibold">No Crop Profiles Yet</p>
+                <p className="text-gray-600 font-semibold">{t('noDocumentsYet')}</p>
                 <p className="text-sm text-gray-400 mt-2 mb-4">
-                  Upload a farming document to create your first crop profile
+                  {t('uploadFirstDoc')}
                 </p>
                 <button
                   onClick={() => setActiveTab('upload')}
                   className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 text-sm"
                 >
-                  Upload First Document
+                  {t('uploadDocument')}
                 </button>
               </div>
             ) : (
@@ -400,23 +400,23 @@ export default function Settings() {
         {activeTab === 'upload' && (
           <div className="p-6 space-y-6">
             <div>
-              <h2 className="text-lg font-bold text-gray-800">Upload Agricultural Document</h2>
+              <h2 className="text-lg font-bold text-gray-800">{t('uploadDocument')}</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Upload a document to create or update a crop profile in the Knowledge Library
+                {t('knowledgeBaseDesc')}
               </p>
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
               <p className="text-sm font-semibold text-blue-800 mb-2 flex items-center gap-2">
                 <Info size={16} />
-                How the Knowledge Library works:
+                {t('howLibraryWorks')}
               </p>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• Upload "tomato_guide.pdf" → Creates permanent "Tomato" profile</li>
-                <li>• Upload "rice_manual.pdf" → Creates permanent "Rice" profile</li>
-                <li>• Switch crops instantly using the dropdown on the dashboard</li>
-                <li>• Alerts and AI chatbot both use the selected crop's thresholds</li>
-                <li>• Upload more documents to enrich any existing profile</li>
+                <li>• {t('libraryRule1')}</li>
+                <li>• {t('libraryRule2')}</li>
+                <li>• {t('libraryRule3')}</li>
+                <li>• {t('libraryRule4')}</li>
+                <li>• {t('libraryRule5')}</li>
               </ul>
             </div>
 
@@ -426,14 +426,13 @@ export default function Settings() {
               {uploading ? (
                 <>
                   <Loader className="animate-spin text-green-600 mb-3" size={40} />
-                  <p className="text-green-700 font-semibold">Processing document...</p>
-                  <p className="text-xs text-gray-500 mt-1">Extracting thresholds with AI...</p>
+                  <p className="text-green-700 font-semibold">{t('uploading')}</p>
                 </>
               ) : (
                 <>
                   <Upload className="text-gray-400 mb-3" size={40} />
-                  <p className="text-gray-700 font-semibold">Click to upload document</p>
-                  <p className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT supported</p>
+                  <p className="text-gray-700 font-semibold">{t('uploadDocuments')}</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('supportedFormats')}</p>
                 </>
               )}
               <input
@@ -449,14 +448,14 @@ export default function Settings() {
             {cropProfiles.length > 0 && (
               <div>
                 <p className="text-sm font-semibold text-gray-700 mb-3">
-                  Existing profiles (you can add more documents to any):
+                  {t('existingProfiles')}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {cropProfiles.map(p => (
                     <span key={p.crop_id} className="bg-green-100 text-green-700 text-sm px-3 py-1 rounded-full flex items-center gap-1">
                       <Leaf size={13} />
                       {p.crop_name}
-                      <span className="text-xs text-green-500">({p.document_count} docs)</span>
+                      <span className="text-xs text-green-500">({p.document_count} {t('docs')})</span>
                     </span>
                   ))}
                 </div>
@@ -469,16 +468,16 @@ export default function Settings() {
         {activeTab === 'search' && (
           <div className="p-6 space-y-4">
             <div>
-              <h2 className="text-lg font-bold text-gray-800">Search Knowledge Base</h2>
+              <h2 className="text-lg font-bold text-gray-800">{t('testKnowledgeBase')}</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Test what the AI knows from uploaded documents
+                {t('testKnowledgeDesc')}
               </p>
             </div>
 
             <div className="flex gap-2">
               <input
                 className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-500"
-                placeholder="e.g., 'What are optimal pH conditions for tomatoes?'"
+                placeholder={t('searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && searchKnowledge()}
@@ -489,14 +488,14 @@ export default function Settings() {
                 className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:bg-gray-400 flex items-center gap-2"
               >
                 {searching ? <Loader className="animate-spin" size={18} /> : <Search size={18} />}
-                {searching ? 'Searching...' : 'Search'}
+                {searching ? t('searching') : t('search')}
               </button>
             </div>
 
             {searchResults.length > 0 && (
               <div className="space-y-3">
                 <p className="font-medium text-gray-700 text-sm">
-                  Found {searchResults.length} relevant chunks:
+                  {t('foundResults')} {searchResults.length} {t('relevantChunks')}
                 </p>
                 {searchResults.map((result, idx) => (
                   <div key={idx} className="bg-gray-50 p-4 rounded-xl border border-gray-200">
@@ -526,10 +525,10 @@ export default function Settings() {
             <div>
               <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
                 <Globe className="text-blue-600" size={22} />
-                Language Settings
+                {t('languageSettings')}
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-                Select your preferred language for the dashboard and AI chatbot
+                {t('selectLanguage')}
               </p>
             </div>
 
@@ -543,7 +542,7 @@ export default function Settings() {
                 }`}
               >
                 <div className="text-3xl mb-2">🇺🇸</div>
-                English
+                {t('english')}
               </button>
               <button
                 onClick={() => setLanguage('fil')}
@@ -554,7 +553,7 @@ export default function Settings() {
                 }`}
               >
                 <div className="text-3xl mb-2">🇵🇭</div>
-                Filipino
+                {t('filipino')}
               </button>
             </div>
 
