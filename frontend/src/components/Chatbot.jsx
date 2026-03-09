@@ -18,13 +18,32 @@ export default function Chatbot() {
     return 'Hello! I am your AI Agronomist. Ask me about your soil health or crop conditions.';
   };
 
-  const [messages, setMessages] = useState([
-    { role: 'assistant', text: getInitialMessage() }
-  ]);
+  const [messages, setMessages] = useState(() => {
+    const savedMessages = localStorage.getItem('chatbotHistory');
+    if (savedMessages) {
+      return JSON.parse(savedMessages);
+    }
+    return [{ role: 'assistant', text: getInitialMessage() }];
+  });
 
-  // ADD: Update greeting when language changes
   useEffect(() => {
-    setMessages([{ role: 'assistant', text: getInitialMessage() }]);
+    localStorage.setItem('chatbotHistory', JSON.stringify(messages));
+  }, [messages]);
+
+  // UPDATE: Modify only the first message so history isn't deleted
+  useEffect(() => {
+    setMessages(prevMessages => {
+      // Create a copy of the existing chat history
+      const updatedMessages = [...prevMessages];
+      
+      // Update ONLY the text of the very first message (the greeting)
+      if (updatedMessages.length > 0 && updatedMessages[0].role === 'assistant') {
+        updatedMessages[0].text = getInitialMessage();
+      }
+      
+      // Return the array with the history intact
+      return updatedMessages;
+    });
   }, [language]);
 
   const API_BASE = 'http://127.0.0.1:8000/api/v1';
