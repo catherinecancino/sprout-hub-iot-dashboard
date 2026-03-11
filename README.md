@@ -357,7 +357,7 @@ python-docx
 
 ## 📄 License
 
-This project is for our thesis.
+This repository was developed for an academic thesis project on IoT-based smart agriculture systems.
 
 ---
 
