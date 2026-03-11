@@ -1,16 +1,16 @@
 // frontend/src/components/Chatbot.jsx
 import { useState, useEffect } from 'react';
-import { MessageCircle, Send, X, Bot } from 'lucide-react';
-import { useLanguage } from '../contexts/LanguageContext'; // ADD THIS
+import { MessageCircle, Send, X, Bot, RotateCw } from 'lucide-react'; 
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function Chatbot() {
-  const { language, t } = useLanguage(); // ADD THIS
+  const { language, t } = useLanguage();
   
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   
-  // CHANGE: Make initial message dynamic based on language
+  // Dynamic initial message based on language
   const getInitialMessage = () => {
     if (language === 'fil') {
       return 'Kumusta! Ako ang iyong AI Agronomist. Magtanong tungkol sa kalusugan ng iyong lupa o tanim.';
@@ -26,22 +26,18 @@ export default function Chatbot() {
     return [{ role: 'assistant', text: getInitialMessage() }];
   });
 
+  // Persist messages to localStorage
   useEffect(() => {
     localStorage.setItem('chatbotHistory', JSON.stringify(messages));
   }, [messages]);
 
-  // UPDATE: Modify only the first message so history isn't deleted
+  // Update greeting when language changes without wiping history
   useEffect(() => {
     setMessages(prevMessages => {
-      // Create a copy of the existing chat history
       const updatedMessages = [...prevMessages];
-      
-      // Update ONLY the text of the very first message (the greeting)
       if (updatedMessages.length > 0 && updatedMessages[0].role === 'assistant') {
         updatedMessages[0].text = getInitialMessage();
       }
-      
-      // Return the array with the history intact
       return updatedMessages;
     });
   }, [language]);
@@ -84,22 +80,28 @@ export default function Chatbot() {
     }
   };
 
-  // Dynamic placeholder based on language
+  // --- NEW: Reset Chat Functionality ---
+  const handleResetChat = () => {
+    const confirmMsg = language === 'fil' 
+      ? "Sigurado ka bang gusto mong burahin ang lahat ng usapan?" 
+      : "Are you sure you want to clear the entire chat history?";
+    
+    if (window.confirm(confirmMsg)) {
+      localStorage.removeItem('chatbotHistory');
+      setMessages([{ role: 'assistant', text: getInitialMessage() }]);
+    }
+  };
+
   const placeholderText = language === 'fil' 
     ? 'Magtanong tungkol sa lupa, tanim...'
     : 'Ask about soil, crops...';
 
-  // Helper function to render **bold** text
   const formatText = (text) => {
-    // Split the text by the ** tags
     const parts = text.split(/(\*\*.*?\*\*)/g);
-    
     return parts.map((part, index) => {
-      // If the part has stars, remove the stars and make it bold
       if (part.startsWith('**') && part.endsWith('**')) {
         return <strong key={index} className="font-bold text-green-900">{part.slice(2, -2)}</strong>;
       }
-      // Otherwise, just return the normal text
       return <span key={index}>{part}</span>;
     });
   };
@@ -117,6 +119,7 @@ export default function Chatbot() {
 
       {isOpen && (
         <div className="bg-white w-80 md:w-96 h-[500px] rounded-2xl shadow-2xl flex flex-col border border-gray-200 overflow-hidden">
+          {/* Header */}
           <div className="bg-green-600 p-4 text-white flex justify-between items-center">
             <div className="flex items-center gap-2">
               <Bot size={20} />
@@ -124,11 +127,23 @@ export default function Chatbot() {
                 {language === 'fil' ? 'AI Agronomo' : 'AI Agronomist'}
               </span>
             </div>
-            <button onClick={() => setIsOpen(false)}>
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Reset Button */}
+              <button 
+                onClick={handleResetChat}
+                className="hover:text-green-200 transition-colors"
+                title={language === 'fil' ? 'I-reset ang usapan' : 'Reset chat'}
+              >
+                <RotateCw size={18} />
+              </button>
+              {/* Close Button */}
+              <button onClick={() => setIsOpen(false)} className="hover:text-green-200 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
+          {/* Chat Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
             {messages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -139,7 +154,7 @@ export default function Chatbot() {
                 }`}>
                   {formatText(msg.text)}
                   {msg.model && (
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-gray-400 mt-1 italic">
                       via {msg.model}
                     </div>
                   )}
@@ -159,6 +174,7 @@ export default function Chatbot() {
             )}
           </div>
 
+          {/* Input Area */}
           <div className="p-3 bg-white border-t flex gap-2">
             <input 
               className="flex-1 border rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -170,7 +186,7 @@ export default function Chatbot() {
             <button 
               onClick={sendMessage}
               disabled={loading}
-              className="bg-green-600 text-white p-2 rounded-full hover:bg-green-700 disabled:bg-gray-400"
+              className="bg-green-600 text-white p-2 rounded-full hover:bg-green-700 disabled:bg-gray-400 transition-colors"
             >
               <Send size={18} />
             </button>
