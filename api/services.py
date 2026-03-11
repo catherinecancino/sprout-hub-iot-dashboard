@@ -44,10 +44,13 @@ class IoTService:
             "node_name": node_name,
             "status": "online",
             "last_seen": payload["timestamp"],
-            "latest_readings": payload
+            "lastReading": payload
         }
         # Use merge=True so we don't accidentally delete crop_type
         node_ref.set(node_data, merge=True)
+
+        # 👇 ADD THIS LINE TO FIX THE STUCK ALERT 👇
+        cls.resolve_alert(node_id, "disconnected")
 
         # 4. Fetch thresholds and Check for Alerts!
         thresholds = cls.get_thresholds_for_node(node_id)
@@ -57,8 +60,7 @@ class IoTService:
 
     @staticmethod
     def get_thresholds_for_node(node_id, sensor_data=None):
-        """Fetches crop-specific thresholds from Firebase. 
-        sensor_data is optional to maintain backward compatibility."""
+        """Fetches crop-specific thresholds from Firebase."""
         try:
             node_doc = db.collection("nodes").document(node_id).get()
             crop_type = "default"
@@ -67,13 +69,22 @@ class IoTService:
                 crop_type = node_doc.to_dict().get("crop_type", "default")
 
             doc_id = crop_type.lower().replace(" ", "_") if crop_type != "default" else "default"
+            
+            # 1. First, try to find it by the exact Document ID
             config_doc = db.collection("crop_config").document(doc_id).get()
 
             if config_doc.exists:
                 config_data = config_doc.to_dict()
-                # If the document has a nested 'thresholds' object, use that, otherwise use the root
+                return config_data.get("thresholds", config_data)
+            
+            # 2. FALLBACK: Search by the 'crop_id' field!
+            query = db.collection("crop_config").where("crop_id", "==", doc_id).get()
+            if query:
+                # Grab the first matching document from the search
+                config_data = query[0].to_dict()
                 return config_data.get("thresholds", config_data)
                 
+            print(f"⚠️ DEBUG: Could not find crop config for '{doc_id}'. Falling back to defaults.")
             return IoTService.DEFAULT_THRESHOLDS
             
         except Exception as e:
@@ -81,8 +92,10 @@ class IoTService:
             return IoTService.DEFAULT_THRESHOLDS
 
     @classmethod
-    def check_sensor_alerts(cls, node_id, data, thresholds):
+    def check_sensor_alerts(cls, node_id, data, thresholds, node_name=None):
         """Evaluates live sensor data against the assigned thresholds."""
+        # Use node_name for display, but keep node_id for the database logic
+        display_name = node_name if node_name else node_id
         
         # --- MOISTURE ALERTS ---
         if "moisture" in data:
@@ -91,9 +104,9 @@ class IoTService:
             max_val = float(thresholds.get("moisture_max", cls.DEFAULT_THRESHOLDS["moisture_max"]))
             
             if val < min_val:
-                cls.trigger_alert(node_id, "moisture", f"Soil is too dry ({val}%). Below {min_val}%.", "warning", "moisture", val)
+                cls.trigger_alert(node_id, "moisture", f"{display_name}: Soil is too dry ({val}%). Below {min_val}%.", "warning", "moisture", val)
             elif val > max_val:
-                cls.trigger_alert(node_id, "moisture", f"Soil is too wet ({val}%). Above {max_val}%.", "warning", "moisture", val)
+                cls.trigger_alert(node_id, "moisture", f"{display_name}: Soil is too wet ({val}%). Above {max_val}%.", "warning", "moisture", val)
             else:
                 cls.resolve_alert(node_id, "moisture")
 
@@ -104,9 +117,9 @@ class IoTService:
             max_val = float(thresholds.get("temp_max", cls.DEFAULT_THRESHOLDS["temp_max"]))
             
             if val < min_val:
-                cls.trigger_alert(node_id, "temperature", f"Soil too cold ({val}°C). Below {min_val}°C.", "warning", "temperature", val)
+                cls.trigger_alert(node_id, "temperature", f"{display_name}: Soil too cold ({val}°C). Below {min_val}°C.", "warning", "temperature", val)
             elif val > max_val:
-                cls.trigger_alert(node_id, "temperature", f"Soil too hot ({val}°C). Above {max_val}°C.", "critical", "temperature", val)
+                cls.trigger_alert(node_id, "temperature", f"{display_name}: Soil too hot ({val}°C). Above {max_val}°C.", "critical", "temperature", val)
             else:
                 cls.resolve_alert(node_id, "temperature")
 
@@ -117,12 +130,44 @@ class IoTService:
             max_val = float(thresholds.get("ph_max", cls.DEFAULT_THRESHOLDS["ph_max"]))
             
             if val < min_val:
-                cls.trigger_alert(node_id, "ph", f"Soil is too acidic (pH {val}).", "warning", "ph", val)
+                cls.trigger_alert(node_id, "ph", f"{display_name}: Soil is too acidic (pH {val}).", "warning", "ph", val)
             elif val > max_val:
-                cls.trigger_alert(node_id, "ph", f"Soil is too alkaline (pH {val}).", "warning", "ph", val)
+                cls.trigger_alert(node_id, "ph", f"{display_name}: Soil is too alkaline (pH {val}).", "warning", "ph", val)
             else:
                 cls.resolve_alert(node_id, "ph")
 
+    @classmethod
+    def recalculate_alerts_for_node(cls, node_id):
+        """Re-evaluates the latest sensor readings against current thresholds."""
+        print(f"--- DEBUG: Recalculating alerts for node: {node_id} ---")
+        
+        node_doc = db.collection("nodes").document(node_id).get()
+        
+        if not node_doc.exists:
+            query = db.collection("nodes").where("node_id", "==", node_id).get()
+            if not query:
+                print(f"DEBUG: ❌ Could not find node '{node_id}' in database.")
+                return
+            node_doc = query[0]
+
+        node_data = node_doc.to_dict()
+        
+        # --- NEW: Get the human-readable name ---
+        node_name = node_data.get("node_name", node_id) 
+        
+        # Use 'lastReading' as per your Firebase structure
+        latest_readings = node_data.get("lastReading")
+
+        if latest_readings:
+            print(f"DEBUG: ✅ Found latest readings for {node_name}: {latest_readings}")
+            thresholds = cls.get_thresholds_for_node(node_id)
+            
+            # --- Pass node_name to the check function ---
+            cls.check_sensor_alerts(node_id, latest_readings, thresholds, node_name)
+            print(f"DEBUG: ✅ Finished checking sensor alerts for {node_name}!")
+        else:
+            print(f"DEBUG: ⚠️ No 'lastReading' found for {node_name} yet.")
+    
     @classmethod
     def trigger_alert(cls, node_id, alert_type, message, severity, parameter, current_value):
         """Creates a new alert if one doesn't already exist to prevent database spam."""
@@ -180,14 +225,5 @@ class IoTService:
 
                 if time_diff > timeout and node.get("status") != "offline":
                     node_doc.reference.update({"status": "offline"})
-                    cls.trigger_alert(
-                        node_id=safe_node_id,
-                        alert_type="disconnected",
-                        message=f"{safe_node_id}: Node is offline (No data for {cls.NODE_TIMEOUT_MINUTES} mins)",
-                        severity="critical",
-                        parameter="connectivity",
-                        current_value="offline"
-                    )
                 elif time_diff <= timeout and node.get("status") == "offline":
                     node_doc.reference.update({"status": "online"})
-                    cls.resolve_alert(node_id=safe_node_id, alert_type="disconnected")
