@@ -9,57 +9,111 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # -------------------------
-# Firestore settings
+# DEVICE CONFIG (PI #2)
 # -------------------------
+NODE_ID = "rpi_2"
+NODE_NAME = "Node B"
+
 PROJECT_ID = "agritech-iot-847f1"
 SERVICE_KEY = "serviceAccountKey.json"
-DEVICE_NAME = "uno-pi"         # change if you want
-COLLECTION = "sensor_readings" # history collection
 
-# Initialize Firebase once
+# -------------------------
+# RS485 SETTINGS
+# -------------------------
+PORT = "/dev/ttyUSB0"
+BAUD = 4800
+SLAVE_ID = 1
+
+SOIL_SAMPLES = 10
+SOIL_DELAY = 1
+
+# -------------------------
+# DHT SETTINGS
+# -------------------------
+DHT_SENSOR = adafruit_dht.DHT11(pin.D17, use_pulseio=False)
+time.sleep(2)
+
+# -------------------------
+# Time sanity check
+# -------------------------
+now_utc = datetime.now(timezone.utc)
+if now_utc.year < 2020:
+    print("⚠️ Your Pi clock looks wrong:", now_utc.isoformat())
+    print("Firestore will FAIL until the system time is corrected.\n")
+
+# -------------------------
+# Firebase Init
+# -------------------------
 cred = credentials.Certificate(SERVICE_KEY)
-firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
 db = firestore.client()
 
 # -------------------------
-# RS485 / Modbus settings
+# Last-known-good cache
 # -------------------------
-PORT = "/dev/ttyUSB0"   # change if needed
-BAUD = 4800             # default from manual
-SLAVE_ID = 1
+last_air_temp = None
+last_humidity = None
 
-SOIL_SAMPLES = 10       # how many soil readings to average
-SOIL_DELAY = 1          # seconds between soil samples
-
-# -------------------------
-# DHT settings
-# -------------------------
-DHT_SENSOR = adafruit_dht.DHT11(pin.D17, use_pulseio=False)  # you said DHT11 works on GPIO17
-DHT_WARMUP_SEC = 2
+last_soil = {
+    "moisture": None,
+    "temperature": None,
+    "ec": None,
+    "pH": None,
+    "nitrogen": None,
+    "phosphorus": None,
+    "potassium": None,
+}
 
 # -------------------------
 # Helpers
 # -------------------------
-def int16_signed(x: int) -> int:
+def int16_signed(x):
     x &= 0xFFFF
     return x - 0x10000 if x & 0x8000 else x
 
 def safe_avg(values):
-    return (sum(values) / len(values)) if values else None
+    return sum(values) / len(values) if values else None
 
 def read_dht():
-    """Return (temp_c, humidity) or (None, None) if read fails."""
     try:
         t = DHT_SENSOR.temperature
         h = DHT_SENSOR.humidity
         if t is None or h is None:
             return None, None
         return float(t), float(h)
-    except RuntimeError:
+    except Exception:
         return None, None
 
+def modbus_read(client):
+    for _ in range(3):
+        r = client.read_holding_registers(address=0x0000, count=9, slave=SLAVE_ID)
+        if not r.isError():
+            return r
+        time.sleep(0.2)
+    return None
+
+def print_terminal(data):
+    print("\n==============================")
+    print(f"Node: {NODE_NAME}")
+    print(f"Time (UTC): {data['timestamp'].isoformat()}")
+
+    print("\nSoil (RS485):")
+    print(f"  Moisture:   {data['moisture']}")
+    print(f"  Temp:       {data['temperature']}")
+    print(f"  EC:         {data['ec']}")
+    print(f"  pH:         {data['pH']}")
+    print(f"  N:          {data['nitrogen']}")
+    print(f"  P:          {data['phosphorus']}")
+    print(f"  K:          {data['potassium']}")
+
+    print("\nAir (DHT):")
+    print(f"  Air Temp:   {data['air_temperature']}")
+    print(f"  Humidity:   {data['humidity']}")
+    print("==============================")
+
 # -------------------------
-# Main
+# Modbus Client
 # -------------------------
 client = ModbusSerialClient(
     port=PORT,
@@ -71,124 +125,117 @@ client = ModbusSerialClient(
 )
 
 if not client.connect():
-    raise SystemExit(f"Could not open {PORT}. Check adapter/port and permissions.")
+    raise SystemExit("Modbus connection failed.")
 
-time.sleep(DHT_WARMUP_SEC)
-
+# -------------------------
+# MAIN LOOP
+# -------------------------
 try:
     while True:
-        print("\nCollecting samples... (CTRL+C to stop)")
 
-        moist_list, temp_list, ec_list, ph_list = [], [], [], []
-        n_list, p_list, k_list = [], [], []
-        sal_list, tds_list = [], []
+        moist, temp_s, ec_l, ph_l = [], [], [], []
+        n_l, p_l, k_l = [], [], []
 
-        # Collect soil samples
-        for i in range(SOIL_SAMPLES):
-            resp = client.read_holding_registers(address=0x0000, count=9, slave=SLAVE_ID)
-            if resp.isError():
-                print("Modbus error:", resp)
-                break
+        for _ in range(SOIL_SAMPLES):
+
+            resp = modbus_read(client)
+
+            if resp is None:
+                time.sleep(SOIL_DELAY)
+                continue
 
             r = resp.registers
 
-            moist_list.append(r[0] / 10.0)
-            temp_list.append(int16_signed(r[1]) / 10.0)
-            ec_list.append(r[2])
-            ph_list.append(r[3] / 10.0)
-
-            n_list.append(r[4])
-            p_list.append(r[5])
-            k_list.append(r[6])
-
-            sal_list.append(r[7])
-            tds_list.append(r[8])
+            moist.append(r[0] / 10.0)
+            temp_s.append(int16_signed(r[1]) / 10.0)
+            ec_l.append(r[2])
+            ph_l.append(r[3] / 10.0)
+            n_l.append(r[4])
+            p_l.append(r[5])
+            k_l.append(r[6])
 
             time.sleep(SOIL_DELAY)
 
-        # Average soil readings
-        moisture = safe_avg(moist_list)
-        soil_temp = safe_avg(temp_list)
-        ec = safe_avg(ec_list)
-        ph = safe_avg(ph_list)
-        n = safe_avg(n_list)
-        p = safe_avg(p_list)
-        k = safe_avg(k_list)
-        sal = safe_avg(sal_list)
-        tds = safe_avg(tds_list)
+        moisture = safe_avg(moist)
+        soil_temp = safe_avg(temp_s)
+        ec = safe_avg(ec_l)
+        ph = safe_avg(ph_l)
+        nitrogen = safe_avg(n_l)
+        phosphorus = safe_avg(p_l)
+        potassium = safe_avg(k_l)
 
-        # Read DHT a few times quickly and take first valid
-        air_t, air_h = None, None
-        for _ in range(5):
-            air_t, air_h = read_dht()
-            if air_t is not None and air_h is not None:
-                break
-            time.sleep(0.5)
+        # cache soil
+        if moisture is not None:
+            last_soil["moisture"] = moisture
+        if soil_temp is not None:
+            last_soil["temperature"] = soil_temp
+        if ec is not None:
+            last_soil["ec"] = ec
+        if ph is not None:
+            last_soil["pH"] = ph
+        if nitrogen is not None:
+            last_soil["nitrogen"] = nitrogen
+        if phosphorus is not None:
+            last_soil["phosphorus"] = phosphorus
+        if potassium is not None:
+            last_soil["potassium"] = potassium
 
-        print("\n====== Averaged Readings ======")
+        # DHT read
+        air_temp, humidity = read_dht()
 
-        if moisture is None:
-            print("Soil: (no valid readings)")
-        else:
-            print("Soil (RS485):")
-            print(f"  Moisture:  {moisture:.1f} %")
-            print(f"  Temp:      {soil_temp:.1f} °C")
-            print(f"  EC:        {ec:.0f} µS/cm")
-            print(f"  pH:        {ph:.1f}")
-            print(f"  N:         {n:.0f}")
-            print(f"  P:         {p:.0f}")
-            print(f"  K:         {k:.0f}")
-            print(f"  Salinity*: {sal:.0f}")
-            print(f"  TDS*:      {tds:.0f}")
-            print("  *Salinity/TDS are reference values in many manuals.")
+        if air_temp is not None:
+            last_air_temp = air_temp
+        if humidity is not None:
+            last_humidity = humidity
 
-        print("\nAir (DHT on GPIO17):")
-        if air_t is None:
-            print("  (no valid DHT reading)")
-        else:
-            print(f"  Temp:      {air_t:.1f} °C")
-            print(f"  Humidity:  {air_h:.1f} %")
+        timestamp = datetime.now(timezone.utc)
 
-        # -------------------------
-        # Firestore upload
-        # -------------------------
-        payload = {
-            "timestamp": datetime.now(timezone.utc),
-            "device": DEVICE_NAME,
-            "soil": {
-                "moisture_pct": moisture,
-                "temp_c": soil_temp,
-                "ec_us_cm": ec,
-                "ph": ph,
-                "n": n,
-                "p": p,
-                "k": k,
-                "salinity_ref": sal,
-                "tds_ref": tds
-            },
-            "air": {
-                "temp_c": air_t,
-                "humidity_pct": air_h
-            }
+        reading_payload = {
+
+            "last_seen": timestamp,
+
+            "air_temperature": last_air_temp,
+            "humidity": last_humidity,
+
+            "moisture": last_soil["moisture"],
+            "temperature": last_soil["temperature"],
+            "ec": last_soil["ec"],
+            "pH": last_soil["pH"],
+            "nitrogen": last_soil["nitrogen"],
+            "phosphorus": last_soil["phosphorus"],
+            "potassium": last_soil["potassium"],
+
+            "timestamp": timestamp,
+            "node_id": NODE_ID,
+            "node_name": NODE_NAME,
+            "status": "online"
         }
 
+        print_terminal(reading_payload)
+
         try:
-            # 1) Append to history
-            db.collection(COLLECTION).add(payload)
 
-            # 2) Also keep latest snapshot (optional but super useful)
-            db.collection("devices").document(DEVICE_NAME).set(payload)
+            db.collection("nodes").document(NODE_ID).set({
+                "node_name": NODE_NAME,
+                "last_seen": timestamp,
+                "status": "online",
+                "lastReading": reading_payload
+            }, merge=True)
 
-            print("\nFirestore: uploaded ✅")
+            ref = db.collection("readings").document(NODE_ID).collection("history").add(reading_payload)
+
+            print("Firestore: uploaded ✅  doc_id:", ref[1].id)
+
         except Exception as e:
-            print("\nFirestore upload failed:", e)
 
-        print("==============================")
+            print("❌ Firestore upload failed:", repr(e))
 
-        time.sleep(2)
+        time.sleep(300)
 
 finally:
+
     client.close()
+
     try:
         DHT_SENSOR.exit()
     except Exception:
