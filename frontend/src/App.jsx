@@ -202,8 +202,8 @@ function App() {
     const min = activeCropThresholds.moisture_min || 30;
     const max = activeCropThresholds.moisture_max || 80;
     if (latest.moisture < min) return { label: t('critical'), color: 'bg-red-100' };
-    if (latest.moisture > max) return { label: t('tooWet'), color: 'bg-yellow-100' };
-    return { label: t('optimal'), color: 'bg-blue-50' };
+    if (latest.moisture > max) return { label: t('tooWet'), color: 'bg-blue-100' };
+    return { label: t('optimal'), color: 'bg-green-50' };
   };
 
   const getTempStatus = () => {
@@ -211,16 +211,16 @@ function App() {
     const min = activeCropThresholds.temp_min || 15;
     const max = activeCropThresholds.temp_max || 35;
     if (latest.temperature > max) return { label: t('tooHot'), color: 'bg-red-100' };
-    if (latest.temperature < min) return { label: t('tooCold'), color: 'bg-red-100' };
-    return { label: t('normal'), color: 'bg-orange-50' };
+    if (latest.temperature < min) return { label: t('tooCold'), color: 'bg-blue-100' };
+    return { label: t('normal'), color: 'bg-green-50' };
   };
 
   const getPhStatus = () => {
     if (!hasValue(latest.ph)) return { label: t('noData'), color: 'bg-gray-100' };
     const min = activeCropThresholds.ph_min || 5.5;
     const max = activeCropThresholds.ph_max || 7.5;
-    if (Number(latest.ph) < min) return { label: t('tooAcidic'), color: 'bg-yellow-100' };
-    if (Number(latest.ph) > max) return { label: t('tooAlkaline'), color: 'bg-yellow-100' };
+    if (Number(latest.ph) < min) return { label: t('tooAcidic'), color: 'bg-red-100' };
+    if (Number(latest.ph) > max) return { label: t('tooAlkaline'), color: 'bg-blue-100' };
     return { label: t('neutral'), color: 'bg-green-50' };
   };
 
@@ -228,26 +228,26 @@ function App() {
     if (!hasValue(latest.nitrogen)) return { label: t('noData'), color: 'bg-gray-100' };
     const min = activeCropThresholds.nitrogen_min || 20;
     const max = activeCropThresholds.nitrogen_max || 100;
-    if (latest.nitrogen < min) return { label: t('low'), color: 'bg-yellow-100' };
-    if (latest.nitrogen > max) return { label: t('high'), color: 'bg-yellow-100' };
-    return { label: t('optimal'), color: 'bg-blue-50' };
+    if (latest.nitrogen < min) return { label: t('low'), color: 'bg-blue-100' };
+    if (latest.nitrogen > max) return { label: t('high'), color: 'bg-red-100' };
+    return { label: t('optimal'), color: 'bg-green-50' };
   };
 
   const getPhosphorusStatus = () => {
     if (!hasValue(latest.phosphorus)) return { label: t('noData'), color: 'bg-gray-100' };
     const min = activeCropThresholds.phosphorus_min || 15;
     const max = activeCropThresholds.phosphorus_max || 80;
-    if (latest.phosphorus < min) return { label: t('low'), color: 'bg-yellow-100' };
-    if (latest.phosphorus > max) return { label: t('high'), color: 'bg-yellow-100' };
-    return { label: t('optimal'), color: 'bg-purple-50' };
+    if (latest.phosphorus < min) return { label: t('low'), color: 'bg-blue-100' };
+    if (latest.phosphorus > max) return { label: t('high'), color: 'bg-red-100' };
+    return { label: t('optimal'), color: 'bg-green-50' };
   };
 
   const getPotassiumStatus = () => {
     if (!hasValue(latest.potassium)) return { label: t('noData'), color: 'bg-gray-100' };
     const min = activeCropThresholds.potassium_min || 20;
     const max = activeCropThresholds.potassium_max || 100;
-    if (latest.potassium < min) return { label: t('low'), color: 'bg-yellow-100' };
-    if (latest.potassium > max) return { label: t('high'), color: 'bg-yellow-100' };
+    if (latest.potassium < min) return { label: t('low'), color: 'bg-blue-100' };
+    if (latest.potassium > max) return { label: t('high'), color: 'bg-red-100' };
     return { label: t('optimal'), color: 'bg-green-50' };
   };
 
@@ -255,14 +255,14 @@ function App() {
     if (!hasValue(latest.air_temperature)) return { label: t('noData'), color: 'bg-gray-100' };
     if (latest.air_temperature > 35) return { label: t('veryHot'), color: 'bg-red-100' };
     if (latest.air_temperature < 18) return { label: t('cool'), color: 'bg-blue-100' };
-    return { label: t('comfortable'), color: 'bg-red-50' };
+    return { label: t('comfortable'), color: 'bg-green-50' };
   };
 
   const getHumidityStatus = () => {
     if (!hasValue(latest.humidity)) return { label: t('noData'), color: 'bg-gray-100' };
     if (latest.humidity < 40) return { label: t('dry'), color: 'bg-yellow-100' };
     if (latest.humidity > 80) return { label: t('veryHumid'), color: 'bg-blue-100' };
-    return { label: t('normal'), color: 'bg-cyan-50' };
+    return { label: t('normal'), color: 'bg-green-50' };
   };
 
   const moistureStatus = getMoistureStatus();
