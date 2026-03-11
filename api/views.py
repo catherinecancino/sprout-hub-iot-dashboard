@@ -300,6 +300,8 @@ class AssignCropToNodeView(APIView):
                 # Update the found document
                 for doc in query:
                     doc.reference.set({"crop_type": crop_type}, merge=True)
+                    
+            IoTService.recalculate_alerts_for_node(node_id)
             
             return Response({
                 "message": f"Successfully assigned {crop_type} to {node_id}",
