@@ -32,7 +32,7 @@ except ImportError:
 
 # ── Document Parsers ─────────────────────────────────────────────────────────
 try:
-    import PyPDF2
+    import pdfplumber
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
@@ -76,14 +76,24 @@ class RAGService:
     @staticmethod
     def extract_text_from_pdf(file_path):
         if not PDF_AVAILABLE:
-            raise RuntimeError("PyPDF2 not installed. Run: pip install PyPDF2")
+            raise RuntimeError("pdfplumber not installed. Run: pip install pdfplumber")
         text = []
-        with open(file_path, "rb") as f:
-            reader = PyPDF2.PdfReader(f)
-            for page in reader.pages:
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                # Extract regular text
                 extracted = page.extract_text()
                 if extracted:
                     text.append(extracted)
+                # Extract tables separately — important for NPK tables
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        # Filter empty cells and join row as readable text
+                        row_text = " | ".join(
+                            str(cell).strip() for cell in row if cell
+                        )
+                        if row_text.strip():
+                            text.append(row_text)
         return "\n".join(text)
 
     @staticmethod
