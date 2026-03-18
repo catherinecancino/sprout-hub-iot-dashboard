@@ -16,25 +16,28 @@ except ImportError:
 
 # Initialize OpenAI client
 openai_client = None
-if OPENAI_AVAILABLE:
-    api_key = os.getenv('OPENAI_API_KEY')
-    if api_key:
-        openai_client = OpenAI(api_key=api_key)
-    else:
-        print("Warning: OPENAI_API_KEY not found in environment variables")
+def _get_openai_client():
+    """Always reads the key fresh from environment."""
+    global openai_client
+    if openai_client is None:
+        api_key = os.getenv('OPENAI_API_KEY')
+        if api_key:
+            openai_client = OpenAI(api_key=api_key)
+    return openai_client
 
 def _safe_float(val, default=None):
     try:
         return float(val)
     except (TypeError, ValueError):
         return default
+
 class AIChatService:
     OPENAI_MODEL = "gpt-4o-mini"
 
     # ─────────────────────── THRESHOLD MANAGEMENT ───────────────────────
 
     @staticmethod
-    @traceable(name="Agronomist QA Bot")
+    @traceable(name="AI Agronomist")
     def get_thresholds(crop_type=None):
         """
         Combined threshold retrieval logic with Knowledge Library priority.
@@ -98,7 +101,9 @@ class AIChatService:
     def _is_agricultural_answer(answer):
         """Safety check on the AI's output"""
         terms = ['crop', 'soil', 'plant', 'fertilizer', 'moisture', 'ph',
-                 'farm', 'lupa', 'tanim', 'nitrogen', 'temperature', 'halaman']
+                 'farm', 'lupa', 'tanim', 'nitrogen', 'temperature', 'halaman',
+                 'potassium', 'phosphorus', 'npk', 'nutrient',
+                 'node', 'reading', 'level', 'sensor', 'mg/kg', 'current']
         return any(t in answer.lower() for t in terms)
 
     # ─────────────────────── MAIN CHATBOT ───────────────────────
@@ -109,33 +114,15 @@ class AIChatService:
         RAG-enhanced AI chatbot with STRICT agricultural focus.
         Uses OpenAI GPT-4o-mini as the LLM backend.
         """
-        if not OPENAI_AVAILABLE or openai_client is None:
+        # FIX: renamed from 'client' to 'oai_client' to avoid any shadowing
+        oai_client = _get_openai_client()
+        if not OPENAI_AVAILABLE or oai_client is None:
             return (
                 "AI service not available. Please install the OpenAI library "
                 "and set your OPENAI_API_KEY in the .env file."
             )
 
-        # 1. Scope Guard
-        #if not AIChatService._is_agricultural_question(user_question):
-        #    filipino_indicators = ['ano', 'paano', 'saan', 'kailan', 'bakit',
-        #                           'kumusta', 'kamusta', 'pano', 'yung', 'mga',
-        #                           'ba', 'po', 'ko', 'mo']
-        #    is_filipino = any(ind in user_question.lower() for ind in filipino_indicators)
-        # 
-        #    if is_filipino:
-        #        return (
-        #            "Pasensya na po, tumutulong lang ako sa mga tanong tungkol sa "
-        #            "agrikultura at pamamahala ng lupa. "
-        #            "Magtanong po kayo tungkol sa mga pananim, kondisyon ng lupa, "
-        #            "o mga teknik sa pagsasaka. 🌱"
-        #        )
-        #    else:
-        #        return (
-        #            "I'm sorry, I can only help with agricultural and soil management questions. "
-        #            "Please ask me about crops, soil conditions, or farming practices. 🌾"
-        #        )
-        
-        #strict language instruction
+        # Strict language instruction
         lang_instruction = "You MUST respond in Tagalog/Filipino." if language == 'fil' else "You MUST respond in English."
 
         # 2. Build Sensor Context with Comparison
@@ -144,19 +131,16 @@ class AIChatService:
 
         for node_doc in nodes_ref:
             node = node_doc.to_dict()
-            # 1. Look for 'latest_readings', but fallback to the main node object if it's missing
             latest = node.get("latest_readings") or node.get("lastReading") or node
-                            
+
             crop = node.get("crop_type", "default")
             thresholds, source = AIChatService.get_thresholds(crop)
 
-            # ✅ SMART HELPER 1: Get Target Strings
             def get_target(min_key, max_key, unit=""):
                 if thresholds.get(min_key) is not None and thresholds.get(max_key) is not None:
                     return f"{thresholds[min_key]}-{thresholds[max_key]}{unit}"
                 return "Not specified in profile"
-            
-            # ✅ SMART HELPER 2: Get Status without crashing on missing data
+
             def get_status(actual_val, min_key, max_key):
                 if actual_val is None:
                     return "Unknown"
@@ -166,13 +150,13 @@ class AIChatService:
 
             # Grab the actual values safely
             m_act  = _safe_float(latest.get('moisture'))
-            ph_act = _safe_float(latest.get('ph') or latest.get('pH'))
+            ph_act = _safe_float(latest.get('pH') or latest.get('ph'))
             t_act  = _safe_float(latest.get('temperature'))
-            
+
             # Format numbers safely for display
-            fmt_m = f"{m_act:.1f}" if m_act is not None else "N/A"
+            fmt_m  = f"{m_act:.1f}"  if m_act  is not None else "N/A"
             fmt_ph = f"{ph_act:.1f}" if ph_act is not None else "N/A"
-            fmt_t = f"{t_act:.1f}" if t_act is not None else "N/A"
+            fmt_t  = f"{t_act:.1f}"  if t_act  is not None else "N/A"
 
             node_info = f"""
 ### Node: {node.get('node_name', 'Unknown')} ###
@@ -197,8 +181,8 @@ class AIChatService:
         if rag_results:
             rag_context = "\n**KNOWLEDGE FROM UPLOADED DOCUMENTS:**\n"
             for res in rag_results:
-                doc_name  = res['metadata'].get('document_name', 'Unknown')
-                crop_tag  = res['metadata'].get('crop_type', '')
+                doc_name   = res['metadata'].get('document_name', 'Unknown')
+                crop_tag   = res['metadata'].get('crop_type', '')
                 crop_label = f" [{crop_tag.upper()}]" if crop_tag else ""
                 rag_context += f"\n📄 Source: {doc_name}{crop_label}\n{res['text']}\n"
         else:
@@ -264,7 +248,8 @@ class AIChatService:
 - Cite specific numbers from the sensor data"""
 
         try:
-            response = openai_client.chat.completions.create(
+            # FIX: using oai_client instead of client
+            response = oai_client.chat.completions.create(
                 model=AIChatService.OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -275,14 +260,12 @@ class AIChatService:
             )
 
             answer = response.choices[0].message.content
-            
-            # 1. Clean up markdown formatting
+
+            # Clean up markdown formatting
             answer = answer.replace('###', '').replace('##', '').replace('#', '')
-            
-            # 2. Normalize spacing: If there are 3 or more line breaks, shrink them to just 2.
-            import re
+
+            # Normalize spacing
             answer = re.sub(r'\n{3,}', '\n\n', answer)
-            
             answer = answer.strip()
 
             # Safety check on output
@@ -316,40 +299,40 @@ class AIChatService:
     @staticmethod
     def get_node_comparison():
         """Generate AI comparison between multiple nodes using GPT-4o-mini"""
-        if not OPENAI_AVAILABLE or openai_client is None:
+        oai_client = _get_openai_client()
+        if not OPENAI_AVAILABLE or oai_client is None:
             return "AI comparison not available (OpenAI not configured)."
 
-        nodes_ref = db.collection("nodes").stream()
+        nodes_ref  = db.collection("nodes").stream()
         nodes_data = []
 
         for node_doc in nodes_ref:
             node   = node_doc.to_dict()
-            latest = node.get("latest_readings", {}) or node.get("lasttReading", {}) or node
+            latest = node.get("latest_readings", {}) or node.get("lastReading", {}) or node
             crop   = node.get("crop_type", "default")
             thresholds, source = AIChatService.get_thresholds(crop)
-            
-            # ✅ Smart helper: If missing, explicitly say "Not specified"
+
             def get_target(min_key, max_key, unit=""):
                 if thresholds.get(min_key) is not None and thresholds.get(max_key) is not None:
                     return f"{thresholds[min_key]}-{thresholds[max_key]}{unit}"
                 return "Not specified in profile"
-            
+
             nodes_data.append({
-                "name":             node.get('node_name', node.get('node_id')),
-                "crop":             crop,
-                "moisture":         latest.get('moisture'),
-                "ph":               latest.get('ph'),
-                "temp":             latest.get('temperature'),
-                "moisture_target":  get_target('moisture_min', 'moisture_max', '%'),
-                "ph_target":        get_target('ph_min', 'ph_max'),
-                "source":           source,
+                "name":            node.get('node_name', node.get('node_id')),
+                "crop":            crop,
+                "moisture":        latest.get('moisture'),
+                "ph":              latest.get('pH') or latest.get('ph'),
+                "temp":            latest.get('temperature'),
+                "moisture_target": get_target('moisture_min', 'moisture_max', '%'),
+                "ph_target":       get_target('ph_min', 'ph_max'),
+                "source":          source,
             })
 
         if len(nodes_data) < 2:
             return "Need at least 2 nodes to compare. / Kailangan ng at least 2 nodes para i-compare."
 
         try:
-            response = openai_client.chat.completions.create(
+            response = oai_client.chat.completions.create(
                 model=AIChatService.OPENAI_MODEL,
                 messages=[{
                     "role": "user",
@@ -360,15 +343,12 @@ class AIChatService:
                         f"{json.dumps(nodes_data, indent=2)}"
                     ),
                 }],
-                max_tokens=100,  # ← REDUCED from 150
+                max_tokens=100,
                 temperature=0.4,
             )
-            
+
             answer = response.choices[0].message.content
-                
-                # Clean up markdown
             answer = answer.replace('**', '').replace('###', '').replace('---', '').strip()
-                
             return answer
 
         except Exception as e:
@@ -385,14 +365,15 @@ class AIChatService:
                 "message": "OpenAI Python package not installed. Run: pip install openai",
             }
 
-        if openai_client is None:
+        oai_client = _get_openai_client()
+        if oai_client is None:
             return {
                 "available": False,
                 "message": "OPENAI_API_KEY not set. Add it to your .env file.",
             }
 
         try:
-            openai_client.chat.completions.create(
+            oai_client.chat.completions.create(
                 model=AIChatService.OPENAI_MODEL,
                 messages=[{"role": "user", "content": "ping"}],
                 max_tokens=5,
