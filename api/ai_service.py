@@ -4,6 +4,7 @@ import json
 import re
 from config.firebase import db
 from .rag_service import RAGService
+from langsmith import traceable
 
 # Import OpenAI
 try:
@@ -33,6 +34,7 @@ class AIChatService:
     # ─────────────────────── THRESHOLD MANAGEMENT ───────────────────────
 
     @staticmethod
+    @traceable(name="Agronomist QA Bot")
     def get_thresholds(crop_type=None):
         """
         Combined threshold retrieval logic with Knowledge Library priority.
