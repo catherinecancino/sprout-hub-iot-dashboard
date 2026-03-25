@@ -103,7 +103,7 @@ class AIChatService:
         terms = ['crop', 'soil', 'plant', 'fertilizer', 'moisture', 'ph',
                  'farm', 'lupa', 'tanim', 'nitrogen', 'temperature', 'halaman',
                  'potassium', 'phosphorus', 'npk', 'nutrient',
-                 'node', 'reading', 'level', 'sensor', 'mg/kg', 'current']
+                 'node', 'reading', 'level', 'sensor', 'mg/kg']
         return any(t in answer.lower() for t in terms)
 
     # ─────────────────────── MAIN CHATBOT ───────────────────────
