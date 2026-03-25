@@ -120,6 +120,10 @@ AGRITECH_IOT/
 ├── api/                     # Django backend app
 │   ├── migrations/
 │   ├── chroma_db/                         # Vector database for RAG
+│   ├── evaluation
+│       └── ragas_eval.py                  # RAGAS evaluation code
+│   ├── management
+│       └── run_ragas_eval.py              # code to run RAGAS evaluation
 │   ├── ai_service.py                      # OpenAI chatbot service
 │   ├── rag_service.py                     # Document retrieval system
 │   ├── knowledge_library_service.py       # Crop Profile Library
@@ -157,6 +161,7 @@ AGRITECH_IOT/
 ├── db.sqlite3               # Local development database
 │
 ├── soil_main.py             # IoT sensor node script
+├── test_chatbot.py          # PyTest Code for AI Chatbot Robustness Testing
 │
 ├── serviceAccountKey.json   # Firebase credentials (gitignored)
 └── .env / .env.example      # Environment variables
